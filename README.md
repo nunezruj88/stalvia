@@ -248,10 +248,48 @@ REDIS_URL=redis://redis:6379
 
 ```bash
 docker compose up -d
+```
+
+Wait a few seconds for PostgreSQL to initialize, then verify all containers are running:
+
+```bash
+docker compose ps
+```
+
+All four services (`postgres`, `redis`, `backend`, `frontend`, `nginx`) should show status `Up`.
+
+### 6. Run database migrations
+
+Alembic and all Python dependencies live **inside the backend container** — never run `alembic` or `pip` directly on the LXC host, as there is no local PostgreSQL or Python environment there.
+
+```bash
+# Generate the initial migration from the SQLAlchemy models
+docker compose exec backend alembic revision --autogenerate -m "initial schema"
+
+# Apply the migration (creates all tables + pg_trgm indexes)
 docker compose exec backend alembic upgrade head
 ```
 
-### 6. Cloudflare Tunnel
+> **Common error — `Connection refused` on port 5432`:**
+> This happens when you run `alembic` directly on the host instead of inside the container.
+> The fix is always to prefix the command with `docker compose exec backend`.
+>
+> ```bash
+> # ❌ Wrong — runs on host, no postgres there
+> alembic revision --autogenerate -m "initial schema"
+>
+> # ✅ Correct — runs inside the container where postgres is reachable
+> docker compose exec backend alembic revision --autogenerate -m "initial schema"
+> ```
+
+> **If you need pip on the host** for any other reason, `pip` does not exist on Debian 12 — use `pip3`:
+>
+> ```bash
+> apt install -y python3-pip
+> pip3 install <package> --break-system-packages
+> ```
+
+### 7. Cloudflare Tunnel
 
 In the Cloudflare Zero Trust dashboard → Networks → Tunnels → your tunnel → **Add public hostname**:
 
