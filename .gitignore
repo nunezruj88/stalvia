@@ -44,3 +44,6 @@ uploads/
 *.jpeg
 *.png
 *.pdf
+
+# Alembic config (contains DB credentials)
+backend/alembic.ini

@@ -303,9 +303,22 @@ docker compose ps
 
 All four services (`postgres`, `redis`, `backend`, `frontend`, `nginx`) should show status `Up`.
 
-### 6. Run database migrations
+### 6. Configure Alembic and run database migrations
 
-Alembic and all Python dependencies live **inside the backend container** — never run `alembic` or `pip` directly on the LXC host, as there is no local PostgreSQL or Python environment there.
+`alembic.ini` is not committed to the repo (it contains your DB password). Create it from the example file:
+
+```bash
+cp backend/alembic.ini.example backend/alembic.ini
+```
+
+Edit `backend/alembic.ini` and replace `your_password_here` with the password from your `.env`:
+
+```bash
+nano backend/alembic.ini
+# update: sqlalchemy.url = postgresql://stalvia:YOUR_PASSWORD@postgres:5432/stalvia
+```
+
+Then run Alembic **inside the backend container** — never on the host directly:
 
 ```bash
 # Generate the initial migration from the SQLAlchemy models
