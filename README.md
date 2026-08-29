@@ -45,9 +45,11 @@ Cloudflare Tunnel (automatic HTTPS)
     │
     ▼
 Proxmox LXC (10.8.1.19)
-    ├── nginx (reverse proxy :8080)
-    ├── frontend  (React + Vite)
-    ├── backend   (FastAPI + Python 3.12)
+    ├── nginx (external container, reverse proxy)
+    │     ├── → frontend :3000
+    │     └── → backend  :8000
+    ├── frontend  (React + Vite        :3000)
+    ├── backend   (FastAPI + Python    :8000)
     ├── postgres  (PostgreSQL 16)
     └── redis     (scraping cache ~4h TTL)
          │
@@ -66,6 +68,7 @@ Proxmox LXC (10.8.1.19)
 | OCR / Vision | Claude Vision API (Anthropic) |
 | Scraping | Playwright (headless Chromium) + httpx |
 | Infrastructure | Proxmox LXC + Docker Compose |
+| Reverse proxy | nginx (external, pre-existing) |
 | Exposure | Cloudflare Tunnel + Cloudflare Access |
 | Storage | Cloudflare R2 (receipt images) |
 
@@ -189,8 +192,50 @@ stalvia/
 
 - Proxmox with a Debian 12 LXC
 - Docker + Docker Compose plugin
+- **nginx running in a separate container or LXC** (reverse proxy, see configuration below)
 - Cloudflare account with a configured domain
 - Anthropic API key
+
+> StalvIA does not include its own nginx — it expects an external nginx instance to act as reverse proxy.
+> The backend exposes port `8000` and the frontend port `3000` on the host LXC (`10.8.1.19`).
+
+### nginx configuration
+
+Add the following server block to your existing nginx instance:
+
+```nginx
+server {
+    listen 80;
+    server_name stalvia.your-domain.com;
+
+    # Frontend
+    location / {
+        proxy_pass http://10.8.1.19:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    # Backend API
+    location /api/ {
+        proxy_pass http://10.8.1.19:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        client_max_body_size 10M;
+        proxy_read_timeout 60s;
+    }
+}
+```
+
+After adding the block, reload nginx:
+
+```bash
+# Inside your nginx container or LXC
+nginx -t && nginx -s reload
+```
+
+SSL/HTTPS is handled automatically by Cloudflare Tunnel — no certificate configuration needed in nginx.
 
 ### 1. Create the LXC in Proxmox
 
