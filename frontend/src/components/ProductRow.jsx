@@ -1,4 +1,4 @@
-const SUPERS = ['mercadona', 'carrefour', 'bonpreu']
+const SUPERS = ['mercadona', 'carrefour', 'bonpreu', 'elcorteingles', 'alcampo']
 
 export default function ProductRow({ product }) {
   const prices = SUPERS.map(s => product.prices?.[s]?.price).filter(Boolean)

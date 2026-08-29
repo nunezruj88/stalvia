@@ -26,6 +26,8 @@ Personal web app to compare supermarket prices in Catalonia from a photo of a pu
 |---|---|---|
 | **Mercadona** | Unofficial community API | ✅ |
 | **Bonpreu / Esclat** | Web scraping (Playwright) | 🚧 |
+| **El Corte Inglés** | Web scraping (Playwright) | 🚧 |
+| **Alcampo** | Web scraping (Playwright) | 🚧 |
 | **Carrefour** | Web scraping (Playwright) | 🚧 |
 
 ---
