@@ -1,8 +1,8 @@
 # StalvIA 🛒
 
-> **Estalvia** (català: _estalviar_, to save) + **IA** (Intel·ligència Artificial)
+> **Estalvia** (Catalan: _estalviar_, to save) + **IA** (Artificial Intelligence)
 
-Aplicació web personal per comparar preus de productes de supermercat a Catalunya a partir d'una fotografia del tiquet de compra.
+Personal web app to compare supermarket prices in Catalonia from a photo of a purchase receipt.
 
 ![StalvIA](https://img.shields.io/badge/StalvIA-v0.1.0-green?style=flat-square)
 ![Python](https://img.shields.io/badge/Python-3.12-blue?style=flat-square&logo=python)
@@ -12,115 +12,116 @@ Aplicació web personal per comparar preus de productes de supermercat a Catalun
 
 ---
 
-## Què fa StalvIA?
+## What does StalvIA do?
 
-1. **Fotografies el tiquet** de qualsevol dels tres supermercat suportats
-2. **Claude Vision (IA)** extreu tots els productes, quantitats i preus via OCR
-3. **Scrapers en temps real** busquen el preu actual de cada producte als tres supers
-4. **Comparativa** producte a producte amb el preu mínim destacat i l'estalvi total potencial
-5. **Historial de preus** emmagatzemat per analitzar l'evolució temporal i fer estudis de mercat
+1. **Photograph your receipt** from any of the three supported supermarkets
+2. **Claude Vision (AI)** extracts all products, quantities and prices via OCR
+3. **Real-time scrapers** fetch the current price of each product at all three supermarkets
+4. **Product-by-product comparison** with the lowest price highlighted and total potential savings
+5. **Price history** stored for temporal analysis and market research
 
-### Supermercat suportats
-| Supermercat | Mètode | Estat |
+### Supported supermarkets
+
+| Supermarket | Method | Status |
 |---|---|---|
-| **Mercadona** | API no oficial (community) | ✅ |
+| **Mercadona** | Unofficial community API | ✅ |
 | **Bonpreu / Esclat** | Web scraping (Playwright) | 🚧 |
 | **Carrefour** | Web scraping (Playwright) | 🚧 |
 
 ---
 
-## Arquitectura
+## Architecture
 
 ```
 Internet
     │
     ▼
-Cloudflare Access (autenticació)
+Cloudflare Access (authentication)
     │
     ▼
-Cloudflare Tunnel (HTTPS automàtic)
+Cloudflare Tunnel (automatic HTTPS)
     │
     ▼
-LXC Proxmox (10.8.1.19)
+Proxmox LXC (10.8.1.19)
     ├── nginx (reverse proxy :8080)
     ├── frontend  (React + Vite)
     ├── backend   (FastAPI + Python 3.12)
     ├── postgres  (PostgreSQL 16)
-    └── redis     (cache scraping ~4h TTL)
+    └── redis     (scraping cache ~4h TTL)
          │
          ▼
-    Cloudflare R2 (imatges tiquets)
+    Cloudflare R2 (receipt images)
 ```
 
-### Stack tecnològic
+### Tech stack
 
-| Capa | Tecnologia |
+| Layer | Technology |
 |---|---|
 | Frontend | React 18 + Vite + TailwindCSS |
 | Backend | Python 3.12 + FastAPI |
-| Base de dades | PostgreSQL 16 + SQLAlchemy + Alembic |
-| Cache | Redis 7 (TTL 4h per scraping) |
+| Database | PostgreSQL 16 + SQLAlchemy + Alembic |
+| Cache | Redis 7 (4h TTL for scraping) |
 | OCR / Vision | Claude Vision API (Anthropic) |
 | Scraping | Playwright (headless Chromium) + httpx |
-| Infraestructura | Proxmox LXC + Docker Compose |
-| Exposició | Cloudflare Tunnel + Cloudflare Access |
-| Emmagatzematge | Cloudflare R2 (imatges tiquets) |
+| Infrastructure | Proxmox LXC + Docker Compose |
+| Exposure | Cloudflare Tunnel + Cloudflare Access |
+| Storage | Cloudflare R2 (receipt images) |
 
 ---
 
-## Model de dades
+## Data model
 
-Dissenyat per a anàlisi temporal de preus des del primer dia:
+Designed for time-series price analysis from day one:
 
 ```
-categories (jeràrquic, parent_id)
-brands (nom, is_private_label)
+categories (hierarchical, parent_id)
+brands (name, is_private_label)
 
 stores
   └── purchases
         └── purchase_items ──→ products
-                                  ├── product_aliases  (normalització OCR, pg_trgm)
-                                  ├── price_history    (sèrie temporal de preus)
-                                  ├── promotions       (2x1, descomptes, etc.)
-                                  ├── price_alerts     (notificació quan baixa el preu)
+                                  ├── product_aliases  (OCR normalisation, pg_trgm)
+                                  ├── price_history    (time-series price data)
+                                  ├── promotions       (2-for-1, discounts, etc.)
+                                  ├── price_alerts     (notify when price drops)
                                   └── shopping_list_items
 
 shopping_lists
   └── shopping_list_items
 ```
 
-### Taules principals
+### Main tables
 
-| Taula | Propòsit |
+| Table | Purpose |
 |---|---|
-| `products` | Catàleg canònic de productes |
-| `product_aliases` | Variants de nom per OCR i scrapers (`pg_trgm`) |
-| `price_history` | Sèrie temporal de preus per producte i supermercat |
-| `purchases` | Tiquets escanejats (data, botiga, total) |
-| `purchase_items` | Línia a línia del tiquet (nom raw + producte normalitzat) |
-| `stores` | Botigues físiques amb coordenades |
-| `promotions` | Ofertes amb data d'inici i fi |
-| `price_alerts` | Alertes quan un producte arriba a preu objectiu |
-| `shopping_lists` | Llistes de la compra planificades |
+| `products` | Canonical product catalogue |
+| `product_aliases` | Name variants for OCR and scrapers (`pg_trgm` fuzzy match) |
+| `price_history` | Time-series prices per product and supermarket |
+| `purchases` | Scanned receipts (date, store, total) |
+| `purchase_items` | Line-by-line receipt data (raw name + normalised product) |
+| `stores` | Physical store locations with coordinates |
+| `promotions` | Offers with start and end dates |
+| `price_alerts` | Alerts when a product reaches a target price |
+| `shopping_lists` | Planned shopping lists |
 
-### Consultes analítiques que habilita
+### Analytical queries this enables
 
 ```sql
--- Evolució del preu de la llet a Mercadona (últims 6 mesos)
+-- Price evolution of milk at Mercadona over the last 6 months
 SELECT DATE_TRUNC('week', scraped_at), AVG(price)
 FROM price_history
 WHERE product_id = 42 AND supermarket = 'mercadona'
 GROUP BY 1 ORDER BY 1;
 
--- Quin super ha estat més barat de mitjana aquest mes?
+-- Which supermarket has been cheapest on average this month?
 SELECT supermarket, AVG(price) as avg_price
 FROM price_history
 WHERE scraped_at > NOW() - INTERVAL '30 days'
 GROUP BY supermarket ORDER BY avg_price;
 
--- Quant m'hauria estalviat comprant al super més barat?
-SELECT p.purchase_date, p.total_amount as pagat,
-       SUM(ph_min.min_price * pi.quantity) as preu_optim
+-- How much would I have saved buying at the cheapest supermarket?
+SELECT p.purchase_date, p.total_amount as paid,
+       SUM(ph_min.min_price * pi.quantity) as optimal_total
 FROM purchases p
 JOIN purchase_items pi ON pi.purchase_id = p.id
 JOIN LATERAL (
@@ -133,7 +134,7 @@ GROUP BY p.id;
 
 ---
 
-## Estructura del projecte
+## Project structure
 
 ```
 stalvia/
@@ -146,10 +147,10 @@ stalvia/
 │   ├── requirements.txt
 │   ├── main.py              # FastAPI app + endpoints
 │   ├── models.py            # SQLAlchemy models
-│   ├── database.py          # Connexió PostgreSQL
+│   ├── database.py          # PostgreSQL connection
 │   ├── scrapers/
 │   │   ├── __init__.py
-│   │   ├── mercadona.py     # API no oficial
+│   │   ├── mercadona.py     # Unofficial API
 │   │   ├── carrefour.py     # Playwright scraper
 │   │   └── bonpreu.py       # Playwright scraper
 │   └── migrations/          # Alembic migrations
@@ -164,7 +165,6 @@ stalvia/
 │       ├── main.jsx
 │       ├── App.jsx
 │       ├── components/
-│       │   ├── TicketUploader.jsx
 │       │   ├── ComparisonTable.jsx
 │       │   ├── ProductRow.jsx
 │       │   └── PriceSummary.jsx
@@ -172,8 +172,6 @@ stalvia/
 │       │   ├── Home.jsx
 │       │   ├── History.jsx
 │       │   └── Analytics.jsx
-│       ├── hooks/
-│       │   └── useTicketAnalysis.js
 │       └── services/
 │           └── api.js
 │
@@ -183,16 +181,16 @@ stalvia/
 
 ---
 
-## Instal·lació i desplegament
+## Installation & deployment
 
-### Prerequisits
+### Prerequisites
 
-- Proxmox amb LXC Debian 12
+- Proxmox with a Debian 12 LXC
 - Docker + Docker Compose plugin
-- Compte Cloudflare amb domini configurat
-- Clau API d'Anthropic
+- Cloudflare account with a configured domain
+- Anthropic API key
 
-### 1. Crear el LXC a Proxmox
+### 1. Create the LXC in Proxmox
 
 ```bash
 pveam update
@@ -210,7 +208,7 @@ pct create 120 local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst \
   --start 1
 ```
 
-### 2. Instal·lar Docker
+### 2. Install Docker
 
 ```bash
 pct enter 120
@@ -219,17 +217,17 @@ curl -fsSL https://get.docker.com | sh
 apt install -y docker-compose-plugin
 ```
 
-### 3. Clonar el repositori
+### 3. Clone the repository
 
 ```bash
 cd /opt
-git clone https://github.com/el-teu-usuari/stalvia.git
+git clone https://github.com/your-username/stalvia.git
 cd stalvia
 cp .env.example .env
-# Editar .env amb les teves credencials
+# Edit .env with your credentials
 ```
 
-### 4. Configurar variables d'entorn
+### 4. Configure environment variables
 
 ```bash
 nano .env
@@ -239,12 +237,12 @@ nano .env
 ANTHROPIC_API_KEY=sk-ant-...
 POSTGRES_DB=stalvia
 POSTGRES_USER=stalvia
-POSTGRES_PASSWORD=password_segur
-DATABASE_URL=postgresql://stalvia:password_segur@postgres:5432/stalvia
+POSTGRES_PASSWORD=a_secure_password
+DATABASE_URL=postgresql://stalvia:a_secure_password@postgres:5432/stalvia
 REDIS_URL=redis://redis:6379
 ```
 
-### 5. Arrancar els serveis
+### 5. Start the services
 
 ```bash
 docker compose up -d
@@ -253,44 +251,44 @@ docker compose exec backend alembic upgrade head
 
 ### 6. Cloudflare Tunnel
 
-Al dashboard de Cloudflare Zero Trust → Networks → Tunnels → el teu túnel → **Add public hostname**:
+In the Cloudflare Zero Trust dashboard → Networks → Tunnels → your tunnel → **Add public hostname**:
 
 ```
 Subdomain : stalvia
-Domain    : el-teu-domini.com
+Domain    : your-domain.com
 Service   : http://10.8.1.19:8080
 ```
 
 ---
 
-## Ús
+## Usage
 
-1. Obre `https://stalvia.el-teu-domini.com`
-2. Fes clic a **"Analitza tiquet"** i puja la foto
-3. StalvIA extreu els productes via Claude Vision
-4. Es mostren els preus actuals als 3 supers
-5. El producte més barat es destaca en verd ✓
-6. Veus el total de compra a cada supermercat i l'estalvi potencial
+1. Open `https://stalvia.your-domain.com`
+2. Click **"Analyse receipt"** and upload the photo
+3. StalvIA extracts the products via Claude Vision
+4. Current prices at all 3 supermarkets are displayed
+5. The cheapest product is highlighted in green ✓
+6. You see the total basket cost at each supermarket and the potential savings
 
 ---
 
 ## Roadmap
 
-- [x] Arquitectura i model de dades
-- [x] Infraestructura Docker + Proxmox
-- [ ] Backend FastAPI + endpoints
-- [ ] Scrapers Mercadona (API)
-- [ ] Scrapers Carrefour + Bonpreu (Playwright)
-- [ ] Integració Claude Vision API
-- [ ] Frontend React — comparativa de preus
-- [ ] Pàgina d'historial de compres
-- [ ] Gràfics d'evolució de preus (Analytics)
-- [ ] Alertes de preu
-- [ ] Llistes de la compra
-- [ ] Integració Cloudflare R2 per a imatges
+- [x] Architecture and data model
+- [x] Docker + Proxmox infrastructure
+- [ ] FastAPI backend endpoints
+- [ ] Mercadona scraper (API)
+- [ ] Carrefour + Bonpreu scrapers (Playwright)
+- [ ] Claude Vision API integration
+- [ ] React frontend — price comparison view
+- [ ] Purchase history page
+- [ ] Price evolution charts (Analytics)
+- [ ] Price alerts
+- [ ] Shopping lists
+- [ ] Cloudflare R2 integration for receipt images
 
 ---
 
-## Llicència
+## License
 
-Ús personal. No destinat a distribució pública.
+Personal use only. Not intended for public distribution.
