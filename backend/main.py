@@ -25,7 +25,7 @@ app.add_middleware(
 redis_client = aioredis.from_url(os.getenv("REDIS_URL", "redis://redis:6379"))
 kimi = OpenAI(
     api_key=os.getenv("ANTHROPIC_API_KEY"),
-    base_url="https://api.groq.com/openai/v1",
+    base_url="https://api.openai.com/v1",
 )
 
 SUPERMARKETS = ["mercadona", "carrefour", "bonpreu", "elcorteingles", "alcampo"]
@@ -54,7 +54,7 @@ async def analyze_ticket(
 
     # 1. OCR with Kimi Vision
     response = kimi.chat.completions.create(
-        model="meta-llama/llama-4-scout-17b-16e-instruct",
+        model="gpt-4o-mini",
         messages=[{
             "role": "user",
             "content": [
