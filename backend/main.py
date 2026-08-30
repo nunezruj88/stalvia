@@ -1,7 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-import anthropic
+from openai import OpenAI
 import base64
 import json
 import asyncio
@@ -23,7 +23,10 @@ app.add_middleware(
 )
 
 redis_client = aioredis.from_url(os.getenv("REDIS_URL", "redis://redis:6379"))
-claude = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+kimi = OpenAI(
+    api_key=os.getenv("ANTHROPIC_API_KEY"),
+    base_url="https://api.moonshot.cn/v1",
+)
 
 SUPERMARKETS = ["mercadona", "carrefour", "bonpreu", "elcorteingles", "alcampo"]
 
@@ -49,19 +52,16 @@ async def analyze_ticket(
     image_data = await file.read()
     b64 = base64.standard_b64encode(image_data).decode()
 
-    # 1. OCR with Claude Vision
-    response = claude.messages.create(
-        model="claude-opus-4-5",
-        max_tokens=2000,
+    # 1. OCR with Kimi Vision
+    response = kimi.chat.completions.create(
+        model="moonshot-v1-32k-vision-preview",
         messages=[{
             "role": "user",
             "content": [
                 {
-                    "type": "image",
-                    "source": {
-                        "type": "base64",
-                        "media_type": file.content_type,
-                        "data": b64
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{file.content_type};base64,{b64}"
                     }
                 },
                 {
@@ -86,11 +86,16 @@ Reply ONLY with valid JSON, no markdown or extra text:
 Normalize names: remove abbreviations, write the full product name."""
                 }
             ]
-        }]
+        }],
+        max_tokens=2000,
     )
 
+    raw_text = response.choices[0].message.content
+    # Strip markdown fences if model wraps response
+    raw_text = raw_text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+
     try:
-        ticket_data = json.loads(response.content[0].text)
+        ticket_data = json.loads(raw_text)
     except json.JSONDecodeError:
         raise HTTPException(status_code=422, detail="Could not parse receipt response")
 
