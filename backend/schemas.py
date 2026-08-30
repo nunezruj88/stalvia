@@ -124,3 +124,10 @@ class SpendingByMonth(BaseModel):
     month: str
     total: float
     purchase_count: int
+
+
+class ManualProductResponse(BaseModel):
+    product_id: int
+    canonical_name: str
+    price_saved: bool
+    message: str

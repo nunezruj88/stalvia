@@ -31,3 +31,10 @@ export const getCheapestSuper = async (days = 30) =>
 
 export const getSpending = async () =>
   handle(await fetch(`${BASE}/analytics/spending`))
+
+export const addManualProduct = async (data) =>
+  handle(await fetch(`${BASE}/products/manual`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  }))

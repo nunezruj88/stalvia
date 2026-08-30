@@ -1,19 +1,19 @@
-import { Routes, Route, NavLink, useLocation } from 'react-router-dom'
+import { Routes, Route, NavLink } from 'react-router-dom'
 import Home from './pages/Home'
 import History from './pages/History'
 import Analytics from './pages/Analytics'
+import Manual from './pages/Manual'
 
 const NAV = [
-  { to: '/',          label: 'Scan',      icon: '📷' },
-  { to: '/history',   label: 'History',   icon: '🧾' },
+  { to: '/',        label: 'Scan',      icon: '📷' },
+  { to: '/manual',  label: 'Manual',    icon: '✏️' },
+  { to: '/history', label: 'History',   icon: '🧾' },
   { to: '/analytics', label: 'Analytics', icon: '📈' },
 ]
 
 export default function App() {
   return (
     <div className="min-h-screen bg-slate-50">
-
-      {/* Top bar */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
           <a href="/" className="flex items-center gap-2">
@@ -47,10 +47,10 @@ export default function App() {
         </div>
       </header>
 
-      {/* Page content */}
       <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
         <Routes>
           <Route path="/"          element={<Home />} />
+          <Route path="/manual"    element={<Manual />} />
           <Route path="/history"   element={<History />} />
           <Route path="/analytics" element={<Analytics />} />
         </Routes>

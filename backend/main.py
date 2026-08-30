@@ -8,6 +8,7 @@ import asyncio
 import os
 import redis.asyncio as aioredis
 
+from pydantic import BaseModel
 from database import get_db
 from scrapers import mercadona, carrefour, bonpreu, elcorteingles, alcampo
 import crud
@@ -253,6 +254,28 @@ def get_price_history(
     """
     return crud.get_price_history(db, product_id, supermarket=supermarket, days=days)
 
+
+
+# ─── Manual product entry ─────────────────────────────────────────────────────
+
+class ManualProductInput(BaseModel):
+    barcode: str = ""
+    name: str
+    supermarket: str
+    category: str = ""
+    price: float
+
+@app.post("/api/products/manual")
+def add_manual_product(data: ManualProductInput, db: Session = Depends(get_db)):
+    """Manually register a product price for a specific supermarket."""
+    return crud.save_manual_product(
+        db=db,
+        name=data.name,
+        supermarket=data.supermarket,
+        price=data.price,
+        barcode=data.barcode or None,
+        category=data.category or None,
+    )
 
 @app.get("/api/analytics/cheapest-super", response_model=list[schemas.SupermarketAvg])
 def get_cheapest_super(days: int = 30, db: Session = Depends(get_db)):

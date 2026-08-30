@@ -279,3 +279,68 @@ def get_monthly_spending(db: Session) -> list:
         }
         for r in rows
     ]
+
+
+def save_manual_product(
+    db: Session,
+    name: str,
+    supermarket: str,
+    price: float,
+    barcode: Optional[str] = None,
+    category: Optional[str] = None,
+) -> dict:
+    """
+    Manually register a product and save its price to price_history.
+    Creates or reuses the product and category as needed.
+    """
+    # Find or create category
+    category_obj = None
+    if category:
+        category_obj = db.query(models.Category).filter_by(name=category).first()
+        if not category_obj:
+            category_obj = models.Category(name=category)
+            db.add(category_obj)
+            db.flush()
+
+    # Find or create product
+    product = _find_or_create_product(db, name)
+
+    # Update barcode if provided and not already set
+    if barcode and not product.barcode:
+        product.barcode = barcode
+
+    # Update category if provided
+    if category_obj and not product.category_id:
+        product.category_id = category_obj.id
+
+    # Find or create store
+    store = db.query(models.Store).filter_by(supermarket=supermarket).first()
+    if not store:
+        store = models.Store(
+            supermarket=supermarket,
+            name=supermarket.capitalize(),
+        )
+        db.add(store)
+        db.flush()
+
+    # Save to price_history (always insert — append-only)
+    db.add(models.PriceHistory(
+        product_id=product.id,
+        store_id=store.id,
+        supermarket=supermarket,
+        price=price,
+        in_promotion=False,
+    ))
+
+    # Save alias with source='manual'
+    _ensure_alias(db, product.id, name, supermarket, source="manual")
+
+    db.commit()
+    db.refresh(product)
+
+    return {
+        "product_id": product.id,
+        "canonical_name": product.canonical_name,
+        "price_saved": True,
+        "message": f'Price {price:.2f}€ saved for "{product.canonical_name}" at {supermarket}',
+    }
