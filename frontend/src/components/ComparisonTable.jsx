@@ -5,7 +5,7 @@ const SUPERS = ['mercadona', 'carrefour', 'bonpreu', 'elcorteingles', 'alcampo']
 const SUPER_LABELS = {
   mercadona:     'Mercadona',
   carrefour:     'Carrefour',
-  bonpreu:       'Bonpreu / Esclat',
+  bonpreu:       'Bonpreu',
   elcorteingles: 'El Corte Inglés',
   alcampo:       'Alcampo',
 }
@@ -13,28 +13,33 @@ const SUPER_LABELS = {
 export default function ComparisonTable({ products }) {
   if (!products?.length) return null
 
+  const found = SUPERS.filter(s =>
+    products.some(p => p.prices?.[s]?.price != null)
+  )
+
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="px-6 py-4 border-b border-gray-100">
-        <h2 className="font-semibold text-gray-900">Price comparison</h2>
+    <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+        <h3 className="font-semibold text-slate-900">Product comparison</h3>
+        <span className="text-xs text-slate-400">{products.length} items</span>
       </div>
 
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
-            <tr>
-              <th className="text-left px-6 py-3 font-medium">Product</th>
+          <thead>
+            <tr className="bg-slate-50 text-slate-400 text-xs uppercase tracking-wide">
+              <th className="text-left px-5 py-3 font-medium">Product</th>
               <th className="text-right px-4 py-3 font-medium">Paid</th>
-              {SUPERS.map(s => (
-                <th key={s} className="text-right px-4 py-3 font-medium">
+              {found.map(s => (
+                <th key={s} className="text-right px-4 py-3 font-medium whitespace-nowrap">
                   {SUPER_LABELS[s]}
                 </th>
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-slate-100">
             {products.map((product, i) => (
-              <ProductRow key={i} product={product} />
+              <ProductRow key={i} product={product} supers={found} />
             ))}
           </tbody>
         </table>
