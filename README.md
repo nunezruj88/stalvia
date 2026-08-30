@@ -44,7 +44,7 @@ Cloudflare Access (authentication)
 Cloudflare Tunnel (automatic HTTPS)
     │
     ▼
-Proxmox LXC (10.8.1.19)
+Proxmox LXC (10.8.1.105)
     ├── nginx (external container, reverse proxy)
     │     ├── → frontend :3000
     │     └── → backend  :8000
@@ -197,7 +197,7 @@ stalvia/
 - Anthropic API key
 
 > StalvIA does not include its own nginx — it expects an external nginx instance to act as reverse proxy.
-> The backend exposes port `8000` and the frontend port `3000` on the host LXC (`10.8.1.19`).
+> The backend exposes port `8000` and the frontend port `3000` on the host LXC (`10.8.1.105`).
 
 ### nginx configuration
 
@@ -210,7 +210,7 @@ server {
 
     # Frontend
     location / {
-        proxy_pass http://10.8.1.19:3000;
+        proxy_pass http://10.8.1.105:3000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -218,7 +218,7 @@ server {
 
     # Backend API
     location /api/ {
-        proxy_pass http://10.8.1.19:8000;
+        proxy_pass http://10.8.1.105:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -249,7 +249,7 @@ pct create 120 local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst \
   --memory 2048 \
   --swap 512 \
   --rootfs local-lvm:10 \
-  --net0 name=eth0,bridge=vmbr0,ip=10.8.1.19/24,gw=10.8.1.1 \
+  --net0 name=eth0,bridge=vmbr0,ip=10.8.1.105/24,gw=10.8.1.1 \
   --unprivileged 1 \
   --features nesting=1 \
   --start 1
@@ -354,7 +354,7 @@ In the Cloudflare Zero Trust dashboard → Networks → Tunnels → your tunnel 
 ```
 Subdomain : stalvia
 Domain    : your-domain.com
-Service   : http://10.8.1.19:8080
+Service   : http://10.8.1.105:8080
 ```
 
 ---
