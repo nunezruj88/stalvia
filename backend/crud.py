@@ -369,3 +369,76 @@ def save_manual_product(
         "price_saved": True,
         "message": f'Price {price:.2f}€ saved for "{product.canonical_name}" at {supermarket}',
     }
+
+
+def get_catalog(db: Session, search: str = "", skip: int = 0, limit: int = 25) -> dict:
+    from sqlalchemy import or_
+    from sqlalchemy.orm import selectinload
+
+    query = db.query(models.Product)
+    if search.strip():
+        value = (
+            search.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        )
+        query = query.filter(
+            or_(
+                models.Product.canonical_name.ilike(f"%{value}%", escape="\\"),
+                models.Product.barcode.ilike(f"%{value}%", escape="\\"),
+            )
+        )
+    total = query.count()
+    products = (
+        query.options(selectinload(models.Product.category))
+        .order_by(
+            models.Product.canonical_name,
+            models.Product.id,
+        )
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    ids = [p.id for p in products]
+    latest = {}
+    if ids:
+        ranked = (
+            db.query(
+                models.PriceHistory.product_id,
+                models.PriceHistory.supermarket,
+                models.PriceHistory.price,
+                models.PriceHistory.scraped_at,
+                models.PriceHistory.source,
+                func.row_number()
+                .over(
+                    partition_by=(
+                        models.PriceHistory.product_id,
+                        models.PriceHistory.supermarket,
+                    ),
+                    order_by=(
+                        models.PriceHistory.scraped_at.desc(),
+                        models.PriceHistory.id.desc(),
+                    ),
+                )
+                .label("position"),
+            )
+            .filter(models.PriceHistory.product_id.in_(ids))
+            .subquery()
+        )
+        for row in db.query(ranked).filter(ranked.c.position == 1):
+            latest.setdefault(row.product_id, {})[row.supermarket] = {
+                "price": float(row.price),
+                "observed_at": row.scraped_at,
+                "source": row.source,
+            }
+    return {
+        "total": total,
+        "products": [
+            {
+                "id": p.id,
+                "canonical_name": p.canonical_name,
+                "barcode": p.barcode,
+                "category": p.category.name if p.category else None,
+                "latest_prices": latest.get(p.id, {}),
+            }
+            for p in products
+        ],
+    }

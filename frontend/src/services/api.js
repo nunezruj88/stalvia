@@ -1,4 +1,5 @@
 const BASE = '/api'
+export const getCatalog = async (search = '', skip = 0, limit = 25, signal) => handle(await fetch(`${BASE}/catalog?search=${encodeURIComponent(search)}&skip=${skip}&limit=${limit}`, { signal }))
 const handle = async res => {
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))

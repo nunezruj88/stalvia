@@ -1,8 +1,8 @@
 import { STORES } from '../services/comparison'
-export default function ComparisonTable({ products, onConfirm }) {
+export default function ComparisonTable({ products, onConfirm, showPaid = true }) {
   return <div className="space-y-4">{products.map((p, i) => <section className="bg-white border rounded-xl p-5" key={i}>
     <h3 className="font-bold">{p.canonical_name} × {p.quantity}</h3>
-    <p className="text-sm mb-3">Pagado por esta línea: {Number(p.total_price).toFixed(2)} €</p>
+    {showPaid && <p className="text-sm mb-3">Pagado por esta línea: {Number(p.total_price).toFixed(2)} €</p>}
     <div className="grid md:grid-cols-2 gap-3">{STORES.map(store => {
       const item = p.prices?.[store]
       const found = Number(item?.price) > 0

@@ -27,6 +27,12 @@ La confirmación de coincidencias es una estimación de esta sesión; no se guar
 
 Los conectores devuelven candidatos, no coincidencias automáticas. Un error se diferencia de un precio no disponible. Nunca se interpreta un precio ausente como cero. No se garantiza cobertura de ninguna tienda hasta validar el conector y la ubicación en el entorno de destino.
 
+## Mantenimiento
+
+La sección **Mantenimiento** reúne el catálogo guardado, la búsqueda por nombre o código de barras y el alta manual de productos con su precio en un supermercado. El listado está paginado para poder consultar todos los productos.
+
+**Ver precios y comparar** muestra la última observación guardada de cada supermercado, con fecha y origen. Consultar el catálogo o guardar un producto no inicia búsquedas externas. El botón **Comparar precios en supermercados** permite solicitarlas expresamente, también sin haber subido un ticket. Confirma que coinciden producto y formato antes de comparar los resultados. La vista distingue precios almacenados de candidatos encontrados y no guarda estos candidatos como precios verificados.
+
 ## Arquitectura
 
 ```text

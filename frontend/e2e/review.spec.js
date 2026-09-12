@@ -1,5 +1,11 @@
 import { test, expect } from '@playwright/test'
 
+test.beforeEach(async ({ page }) => {
+  await page.route('https://fonts.googleapis.com/**', route => route.abort())
+  await page.route('https://fonts.gstatic.com/**', route => route.abort())
+})
+
+
 test('review, save, compare and explicitly confirm matching products', async ({ page }) => {
   const errors = []
   page.on('pageerror', error => errors.push(error.message))

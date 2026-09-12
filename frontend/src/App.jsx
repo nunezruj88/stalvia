@@ -3,10 +3,11 @@ import Home from './pages/Home'
 import History from './pages/History'
 import Analytics from './pages/Analytics'
 import Manual from './pages/Manual'
+import Maintenance from './pages/Maintenance'
 
 const NAV = [
   { to: '/',        label: 'Scan',      icon: '📷' },
-  { to: '/manual',  label: 'Manual',    icon: '✏️' },
+  { to: '/mantenimiento', label: 'Mantenimiento', icon: '🗂️' },
   { to: '/history', label: 'History',   icon: '🧾' },
   { to: '/analytics', label: 'Analytics', icon: '📈' },
 ]
@@ -30,6 +31,8 @@ export default function App() {
               <NavLink
                 key={to}
                 to={to}
+                aria-label={label}
+                title={label}
                 end={to === '/'}
                 className={({ isActive }) =>
                   `flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
@@ -50,6 +53,7 @@ export default function App() {
       <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
         <Routes>
           <Route path="/"          element={<Home />} />
+          <Route path="/mantenimiento" element={<Maintenance />} />
           <Route path="/manual"    element={<Manual />} />
           <Route path="/history"   element={<History />} />
           <Route path="/analytics" element={<Analytics />} />

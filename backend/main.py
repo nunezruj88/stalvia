@@ -214,6 +214,16 @@ def delete_purchase(purchase_id: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
+@app.get("/api/catalog")
+def get_catalog(
+    search: str = Query("", max_length=250),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(25, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    return crud.get_catalog(db, search=search, skip=skip, limit=limit)
+
+
 # ─── Products ─────────────────────────────────────────────────────────────────
 
 

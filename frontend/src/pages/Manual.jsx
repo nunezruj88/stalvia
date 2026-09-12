@@ -23,7 +23,7 @@ const CATEGORIES = [
   { value: 'other',           label: '📦 Other' },
 ]
 
-export default function Manual() {
+export default function Manual({ onSaved }) {
   const [form, setForm] = useState({
     barcode: '',
     name: '',
@@ -96,26 +96,27 @@ export default function Manual() {
   // ── Submit ──────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     if (!form.name.trim()) {
-      setStatus({ type: 'error', message: 'Product name is required.' })
+      setStatus({ type: 'error', message: 'Escribe el nombre del producto.' })
       return
     }
     if (!form.supermarket) {
-      setStatus({ type: 'error', message: 'Please select a supermarket.' })
+      setStatus({ type: 'error', message: 'Selecciona un supermercado.' })
       return
     }
     if (!form.price || (!Number.isFinite(Number(form.price)) || Number(form.price) <= 0)) {
-      setStatus({ type: 'error', message: 'Please enter a valid price.' })
+      setStatus({ type: 'error', message: 'Introduce un precio mayor que cero.' })
       return
     }
 
     setLoading(true)
     setStatus(null)
     try {
-      await addManualProduct(form)
-      setStatus({ type: 'success', message: `"${form.name}" saved successfully.` })
+      const result = await addManualProduct(form)
+      setStatus({ type: 'success', message: `"${form.name}" guardado correctamente.` })
       setForm({ barcode: '', name: '', supermarket: '', category: '', price: '' })
+      onSaved?.(result)
     } catch (e) {
-      setStatus({ type: 'error', message: e.message || 'Something went wrong.' })
+      setStatus({ type: 'error', message: e.message || 'No se pudo guardar el producto.' })
     } finally {
       setLoading(false)
     }
@@ -123,9 +124,9 @@ export default function Manual() {
 
   return (
     <div className="space-y-5 max-w-lg">
-      <h1 className="text-xl font-bold text-slate-900">Add product manually</h1>
+      <h1 className="text-xl font-bold text-slate-900">Alta manual de producto</h1>
       <p className="text-slate-400 text-sm -mt-3">
-        Manually register a product price to build the local database.
+        Guarda el producto y su precio en un supermercado. Después podrás comparar precios si lo deseas.
       </p>
 
       {/* Status */}
@@ -145,10 +146,11 @@ export default function Manual() {
         {/* Barcode */}
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1.5">
-            Barcode <span className="text-slate-400 font-normal">(optional)</span>
+            Barcode <span className="text-slate-400 font-normal">(opcional)</span>
           </label>
           <div className="flex gap-2">
             <input
+              aria-label="Código de barras"
               type="text"
               value={form.barcode}
               onChange={set('barcode')}
@@ -187,32 +189,34 @@ export default function Manual() {
           )}
         </div>
 
-        {/* Product name */}
+        {/* Nombre del producto */}
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1.5">
-            Product name <span className="text-red-400">*</span>
+            Nombre del producto <span className="text-red-400">*</span>
           </label>
           <input
             type="text"
+            aria-label="Nombre del producto"
             value={form.name}
             onChange={set('name')}
             placeholder="e.g. Leche entera Hacendado 1L"
             className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
           />
-          <p className="text-xs text-slate-400 mt-1">Use the name as it appears on the receipt</p>
+          <p className="text-xs text-slate-400 mt-1">Incluye marca, variedad y formato, por ejemplo, 1 L o 500 g.</p>
         </div>
 
         {/* Supermarket */}
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1.5">
-            Supermarket <span className="text-red-400">*</span>
+            Supermercado <span className="text-red-400">*</span>
           </label>
           <select
+            aria-label="Supermercado"
             value={form.supermarket}
             onChange={set('supermarket')}
             className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
           >
-            <option value="">Select supermarket…</option>
+            <option value="">Selecciona supermercado…</option>
             {SUPERMARKETS.map(s => (
               <option key={s.value} value={s.value}>{s.label}</option>
             ))}
@@ -222,14 +226,15 @@ export default function Manual() {
         {/* Category */}
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1.5">
-            Category <span className="text-slate-400 font-normal">(optional)</span>
+            Categoría <span className="text-slate-400 font-normal">(opcional)</span>
           </label>
           <select
+            aria-label="Categoría"
             value={form.category}
             onChange={set('category')}
             className="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white"
           >
-            <option value="">Select category…</option>
+            <option value="">Selecciona categoría…</option>
             {CATEGORIES.map(c => (
               <option key={c.value} value={c.value}>{c.label}</option>
             ))}
@@ -239,13 +244,14 @@ export default function Manual() {
         {/* Price */}
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1.5">
-            Price (€) <span className="text-red-400">*</span>
+            Precio (€) <span className="text-red-400">*</span>
           </label>
           <div className="relative">
             <input
               type="number"
               step="0.01"
               min="0.01"
+              aria-label="Precio (€)"
               value={form.price}
               onChange={set('price')}
               placeholder="0.00"
@@ -267,10 +273,10 @@ export default function Manual() {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"/>
               </svg>
-              Saving…
+              Guardando…
             </>
           ) : (
-            '+ Save product'
+            '+ Guardar producto'
           )}
         </button>
       </div>
