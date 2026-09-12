@@ -236,7 +236,9 @@ def test_ocr_is_review_only(client, db, monkeypatch):
     provider.__aenter__.return_value.chat.completions.create = AsyncMock(
         return_value=response
     )
-    monkeypatch.setattr(main, "AsyncOpenAI", lambda **kwargs: provider)
+    import ai
+
+    monkeypatch.setattr(ai, "AsyncOpenAI", lambda **kwargs: provider)
     monkeypatch.setenv("OPENAI_API_KEY", "test-only")
     result = client.post(
         "/api/analyze-ticket", files={"file": ("x.png", png(), "image/png")}

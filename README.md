@@ -7,7 +7,7 @@
 Versión 0.2: base de instalación y flujo de revisión corregidos. Los conectores de tiendas siguen siendo experimentales: una respuesta de búsqueda no demuestra que el producto sea equivalente.
 
 1. Sube una foto JPEG, PNG o WebP de hasta 8 MB y 20 megapíxeles.
-2. OpenAI extrae un borrador. La extracción no guarda ninguna compra.
+2. El proveedor de IA configurado extrae un borrador. La extracción no guarda ninguna compra.
 3. Revisa supermercado, fecha, nombres, cantidades, precios y totales. Puedes añadir o eliminar líneas.
 4. Confirma el ticket. El servidor comprueba campos y concordancia del total; conserva los totales de línea, incluidos descuentos.
 5. Busca precios. La interfaz consulta producto a producto y muestra el progreso; el ticket sigue guardado aunque falle una tienda.
@@ -46,7 +46,7 @@ Navegador → Cloudflare Access / Tunnel → nginx externo
                                        backend:8000
                                   ├── PostgreSQL 16
                                   ├── Redis (caché opcional)
-                                  ├── OpenAI
+                                  ├── IA configurable
                                   └── conectores de tiendas
 ```
 
@@ -54,7 +54,7 @@ Compose contiene cuatro servicios persistentes (`postgres`, `redis`, `backend`, 
 
 - Backend: Python 3.12, FastAPI, SQLAlchemy y Alembic.
 - Frontend: React 18, React Router, Vite y Tailwind 3. Las versiones exactas se registran en `package-lock.json`.
-- OCR: cliente asíncrono de OpenAI; clave y modelo configurables.
+- OCR: adaptadores asíncronos para OpenAI, Anthropic y servicios compatibles con OpenAI; selección mediante `.env`.
 - Conectores: máximo configurable de consultas simultáneas, con un navegador compartido y contextos aislados.
 - Redis: caché de candidatos durante cuatro horas. Sus fallos no impiden consultar tiendas ni guardar tickets.
 - PostgreSQL: compras, catálogo y precios observados. R2 todavía no está integrado.
@@ -72,8 +72,9 @@ cp .env.example .env
 Editar `.env`:
 
 ```dotenv
-OPENAI_API_KEY=REEMPLAZAR_POR_CLAVE_DE_OPENAI
-OPENAI_MODEL=gpt-4o-mini
+AI_PROVIDER=openai
+AI_API_KEY=REEMPLAZAR_POR_CLAVE_DEL_PROVEEDOR
+AI_MODEL=gpt-4o-mini
 POSTGRES_DB=stalvia
 POSTGRES_USER=stalvia
 POSTGRES_PASSWORD=REEMPLAZAR_POR_PASSWORD_SEGURA
@@ -83,7 +84,7 @@ MERCADONA_WAREHOUSE=vlc1
 BIND_ADDRESS=127.0.0.1
 ```
 
-`OPENAI_API_KEY` sustituye a la antigua variable `ANTHROPIC_API_KEY`. No usar una clave de Anthropic. La aplicación puede arrancar sin clave para el registro manual; la lectura de fotos devolverá un mensaje de configuración pendiente.
+La aplicación puede arrancar sin configurar IA para el registro manual; la lectura de fotos devolverá un mensaje de configuración pendiente. Usa una clave del proveedor elegido.
 
 La conexión de la aplicación y de Alembic se construye a partir de `POSTGRES_*`, incluyendo contraseñas con caracteres reservados. `DATABASE_URL` es opcional y tiene prioridad si se define. Si se proporciona una URL manualmente, codificar los caracteres reservados de sus credenciales.
 
@@ -95,7 +96,57 @@ docker compose logs --tail=100 migrate backend frontend
 
 La tarea `migrate` debe terminar con código 0. El backend arranca después de la migración y la interfaz después de que el backend esté disponible. Una tarea `migrate` terminada correctamente no es un contenedor fallido.
 
-Abrir `http://localhost:3000` en el host o mediante un túnel SSH. `/api/health` comprueba el acceso a la tabla de compras y muestra si hay una clave de OCR configurada.
+Abrir `http://localhost:3000` en el host o mediante un túnel SSH. `/api/health` comprueba el acceso a la tabla de compras y muestra el proveedor, el modelo y si la configuración de OCR está completa. No verifica la validez de la clave ni hace una llamada de pago.
+
+### Cambiar de proveedor de IA
+
+Edita las siguientes variables en `.env`. No hace falta modificar código. El modelo elegido debe admitir imágenes y estar disponible en tu cuenta.
+
+**OpenAI** (configuración predeterminada):
+
+```dotenv
+AI_PROVIDER=openai
+AI_API_KEY=CLAVE_DE_OPENAI
+AI_MODEL=gpt-4o-mini
+AI_BASE_URL=
+AI_JSON_MODE=
+```
+
+**Anthropic** (API nativa de Messages):
+
+```dotenv
+AI_PROVIDER=anthropic
+AI_API_KEY=CLAVE_DE_ANTHROPIC
+AI_MODEL=IDENTIFICADOR_DE_MODELO_CON_VISION
+AI_BASE_URL=
+AI_JSON_MODE=
+```
+
+**Servicio compatible con OpenAI**, incluido un servidor local:
+
+```dotenv
+AI_PROVIDER=openai_compatible
+AI_API_KEY=CLAVE_DEL_SERVICIO
+AI_MODEL=IDENTIFICADOR_DE_MODELO_CON_VISION
+AI_BASE_URL=https://proveedor.example/v1
+AI_JSON_MODE=false
+```
+
+Reemplaza los identificadores y la URL del ejemplo por los del servicio. Debe implementar Chat Completions y admitir imágenes mediante `image_url` con datos base64; la compatibilidad de texto por sí sola no basta. La clave puede quedar vacía en servidores locales sin autenticación. Desde Docker, `localhost` apunta al propio contenedor: utiliza una dirección alcanzable desde el backend.
+
+Después de cambiar `.env`, recrea el backend para cargar las variables nuevas:
+
+```bash
+docker compose up -d --force-recreate backend
+```
+
+- `AI_API_KEY` y `AI_MODEL` tienen prioridad. Las instalaciones existentes pueden seguir usando `OPENAI_API_KEY` y `OPENAI_MODEL` con OpenAI. Anthropic también admite `ANTHROPIC_API_KEY`. Las variables específicas de un proveedor no se reutilizan para otros proveedores.
+- Al cambiar de proveedor, actualiza también la clave y el modelo y limpia `AI_BASE_URL` si vuelves a OpenAI o Anthropic.
+- `AI_JSON_MODE` vacío activa JSON mode con OpenAI y lo desactiva en servicios compatibles. Actívalo con `true` solo si el servicio lo admite. No se aplica al adaptador de Anthropic.
+- `AI_TIMEOUT_SECONDS` limita la espera total (45 segundos por defecto, entre 1 y 90). `AI_MAX_TOKENS` limita la respuesta (6000 por defecto, entre 256 y 16384); el modelo puede imponer límites adicionales.
+- Todos los proveedores usan las mismas validaciones y mantienen la revisión antes de guardar. Una respuesta incompleta o inválida se rechaza. No hay cambio automático a otro proveedor ni reintentos de pago automáticos.
+
+Los adaptadores están en `backend/ai.py`; el resto de la aplicación usa una única función de extracción. Las claves permanecen en el backend. Referencias de los protocolos: [JSON mode de OpenAI](https://developers.openai.com/api/docs/guides/structured-outputs) y [Messages de Anthropic](https://platform.claude.com/docs/en/api/messages/create).
 
 ### Migraciones y bases existentes
 
