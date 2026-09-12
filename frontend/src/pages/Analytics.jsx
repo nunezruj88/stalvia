@@ -35,16 +35,19 @@ function BarChart({ data, maxVal, color }) {
 export default function Analytics() {
   const [cheapest, setCheapest] = useState([])
   const [spending, setSpending] = useState([])
+  const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     Promise.all([getCheapestSuper(), getSpending()])
       .then(([c, s]) => { setCheapest(c); setSpending(s) })
-      .catch(console.error)
+      .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [])
 
   const isEmpty = !cheapest.length && !spending.length
+
+  if (error) return <div role="alert" className="bg-red-50 p-5 rounded-xl">{error}<button className="ml-4 underline" onClick={() => window.location.reload()}>Retry</button></div>
 
   if (loading) return (
     <div className="flex justify-center py-16">
@@ -85,7 +88,7 @@ export default function Analytics() {
         </div>
         {cheapest[0] && (
           <div className="bg-green-50 rounded-xl border border-green-200 p-4">
-            <div className="text-xs text-green-600 mb-1">Cheapest on average</div>
+            <div className="text-xs text-green-600 mb-1">Lowest average in common basket</div>
             <div className="text-lg font-bold text-green-800">
               {SUPER_LABELS[cheapest[0].supermarket] || cheapest[0].supermarket}
             </div>
@@ -97,7 +100,7 @@ export default function Analytics() {
       {/* Cheapest supermarket */}
       {cheapest.length > 0 && (
         <div className="bg-white rounded-2xl border border-slate-200 p-5">
-          <h3 className="font-semibold text-slate-900 mb-4">Average price by supermarket <span className="text-slate-400 font-normal text-sm">(last 30 days)</span></h3>
+          <h3 className="font-semibold text-slate-900 mb-4">Common barcode basket by supermarket <span className="text-slate-400 font-normal text-sm">(latest price per SKU, last 30 days)</span></h3>
           <BarChart
             data={cheapest.map(c => ({
               label: SUPER_LABELS[c.supermarket] || c.supermarket,

@@ -2,6 +2,9 @@
 Scraper Mercadona via API no oficial de la comunitat.
 Documentació: https://tienda.mercadona.es/api/
 """
+
+import os
+
 import httpx
 
 BASE_URL = "https://tienda.mercadona.es/api"
@@ -17,7 +20,11 @@ async def search(query: str) -> dict | None:
         async with httpx.AsyncClient(timeout=10) as client:
             r = await client.get(
                 f"{BASE_URL}/search/",
-                params={"query": query, "lang": "es", "wh": "vlc1"},
+                params={
+                    "query": query,
+                    "lang": "es",
+                    "wh": os.getenv("MERCADONA_WAREHOUSE", "vlc1"),
+                },
                 headers=HEADERS,
             )
             r.raise_for_status()
@@ -32,15 +39,17 @@ async def search(query: str) -> dict | None:
 
         return {
             "name": item.get("display_name"),
-            "price": float(price_info.get("unit_price", 0)),
+            "price": float(price_info["unit_price"])
+            if price_info.get("unit_price")
+            else None,
             "unit_size": price_info.get("unit_size"),
             "unit_name": price_info.get("unit_name"),
             "price_per_unit": float(price_info.get("reference_price", 0)),
             "image": item.get("thumbnail"),
             "url": f"https://tienda.mercadona.es/product/{item['id']}",
-            "in_promotion": price_info.get("is_new", False),
+            "in_promotion": False,
         }
 
     except Exception as e:
         print(f"[Mercadona] Error cercant '{query}': {e}")
-        return None
+        raise

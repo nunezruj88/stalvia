@@ -1,219 +1,61 @@
 # StalvIA 🛒
 
-> **Estalvia** (del catalán _estalviar_, ahorrar) + **IA** (inteligencia artificial).
+**Estalvia** (ahorrar, en catalán) + **IA**. Aplicación personal para registrar tickets y explorar precios de supermercados en Cataluña.
 
-Aplicación personal para registrar tickets y comparar precios de supermercados en Cataluña.
+## Estado y funcionamiento
 
-**Estado: prototipo en desarrollo.** Hay backend, interfaz y cinco conectores implementados, pero la instalación desde cero necesita correcciones y las comparaciones todavía pueden mostrar ahorros incorrectos. Este README documenta el código revisado y las mejoras pendientes; no implica que estas mejoras estén implementadas.
+Versión 0.2: base de instalación y flujo de revisión corregidos. Los conectores de tiendas siguen siendo experimentales: una respuesta de búsqueda no demuestra que el producto sea equivalente.
 
-## Qué hace actualmente
+1. Sube una foto JPEG, PNG o WebP de hasta 8 MB y 20 megapíxeles.
+2. OpenAI extrae un borrador. La extracción no guarda ninguna compra.
+3. Revisa supermercado, fecha, nombres, cantidades, precios y totales. Puedes añadir o eliminar líneas.
+4. Confirma el ticket. El servidor comprueba campos y concordancia del total; conserva los totales de línea, incluidos descuentos.
+5. Busca precios. La interfaz consulta producto a producto y muestra el progreso; el ticket sigue guardado aunque falle una tienda.
+6. Comprueba el enlace y el formato de cada resultado. Solo las coincidencias confirmadas entran en la comparación. Las cestas incompletas no pueden aparecer como ganadoras.
 
-1. Recibe una foto de un ticket.
-2. Envía la imagen a la API de OpenAI para extraer productos, cantidades y precios.
-3. Consulta cinco conectores y guarda sus resultados en Redis durante cuatro horas.
-4. Guarda la compra y las observaciones de precios en PostgreSQL.
-5. Muestra comparaciones, historial de compras y estadísticas básicas.
-6. Permite registrar manualmente un producto y su precio.
+La confirmación de coincidencias es una estimación de esta sesión; no se guarda como una equivalencia permanente ni como precio verificado en el histórico. Confirma únicamente el mismo producto, formato y unidad de venta. La conversión automática entre envases, kg y litros sigue pendiente.
 
-La extracción y la comparación se ejecutan dentro de la misma petición. Todavía no existe una pantalla para revisar y corregir el ticket antes de guardarlo.
+### Supermercados
 
-### Estado de los supermercados
-
-| Supermercado | Implementación | Validación pendiente |
+| Tienda | Conector | Limitación |
 |---|---|---|
-| Mercadona | Consulta HTTP a una API no oficial | Disponibilidad del endpoint, formato de respuesta, ubicación y equivalencia |
-| Carrefour | Playwright / Chromium | Selectores, acceso al catálogo y equivalencia |
-| Bonpreu / Esclat | Playwright / Chromium | Selectores, acceso al catálogo y equivalencia |
-| El Corte Inglés | Playwright / Chromium | Selectores, acceso al catálogo y equivalencia |
-| Alcampo | Playwright / Chromium | Selectores, acceso al catálogo y equivalencia |
+| Mercadona | HTTP a API no oficial | Almacén configurable; endpoint y catálogo sujetos a cambios |
+| Carrefour | Playwright | Selectores y acceso sujetos a cambios |
+| Bonpreu / Esclat | Playwright | Selectores y acceso sujetos a cambios |
+| El Corte Inglés | Playwright | Selectores y acceso sujetos a cambios |
+| Alcampo | Playwright | Selectores y acceso sujetos a cambios |
 
-**Que exista un conector no garantiza que funcione contra la tienda en vivo.** Todos seleccionan el primer resultado. Mercadona tiene el almacén `vlc1` fijado en el código; no se debe asumir que representa el catálogo o los precios de la ubicación del usuario.
+Los conectores devuelven candidatos, no coincidencias automáticas. Un error se diferencia de un precio no disponible. Nunca se interpreta un precio ausente como cero. No se garantiza cobertura de ninguna tienda hasta validar el conector y la ubicación en el entorno de destino.
 
-## Arquitectura actual
-
-```text
-Navegador
-    │
-    ▼
-Cloudflare Access + Tunnel (configuración externa)
-    │
-    ▼
-nginx externo (dirección y puerto propios)
-    ├── /      → host de StalvIA:3000 → frontend React / Vite
-    └── /api/  → host de StalvIA:8000 → backend FastAPI
-                                           ├── PostgreSQL
-                                           ├── Redis
-                                           ├── API de OpenAI
-                                           └── conectores de supermercados
-```
-
-Docker Compose define **cuatro servicios**: `postgres`, `redis`, `backend` y `frontend`. No incluye nginx ni el conector de Cloudflare Tunnel.
-
-El almacenamiento de imágenes en Cloudflare R2 está **pendiente**. El modelo contiene `ticket_image_url`, pero no hay integración de almacenamiento.
-
-| Capa | Tecnología del repositorio |
-|---|---|
-| Frontend | React 18, Vite 5, React Router; configuración de Tailwind pendiente |
-| Backend | Python 3.12, FastAPI, SQLAlchemy |
-| Base de datos | PostgreSQL 16, Alembic, extensión pg_trgm |
-| Caché | Redis 7; TTL de comparación de cuatro horas |
-| Extracción de tickets | SDK de OpenAI, modelo configurado en código: `gpt-4o-mini` |
-| Conectores | httpx y Playwright / Chromium |
-| Entorno previsto | Docker Compose en un host o LXC de Proxmox |
-| Acceso remoto previsto | nginx externo, Cloudflare Tunnel y Cloudflare Access |
-
-Las versiones declaradas no constituyen una validación de compatibilidad o seguridad actual.
-
-## Estructura del proyecto
+## Arquitectura
 
 ```text
-stalvia/
-├── .env.example
-├── .github/workflows/ci.yml
-├── docker-compose.yml
-├── README.md
-├── backend/
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   ├── alembic.ini.example
-│   ├── main.py                 # API, extracción y comparación
-│   ├── crud.py                 # Persistencia y consultas
-│   ├── schemas.py              # Esquemas de respuesta
-│   ├── models.py               # Modelos SQLAlchemy
-│   ├── database.py
-│   ├── migrations/
-│   │   ├── env.py
-│   │   ├── script.py.mako
-│   │   └── versions/           # Sin migración inicial versionada
-│   └── scrapers/
-│       ├── mercadona.py
-│       ├── carrefour.py
-│       ├── bonpreu.py
-│       ├── elcorteingles.py
-│       └── alcampo.py
-├── frontend/
-│   ├── Dockerfile
-│   ├── index.html
-│   ├── package.json
-│   ├── vite.config.js
-│   └── src/
-│       ├── App.jsx
-│       ├── main.jsx
-│       ├── index.css
-│       ├── components/
-│       │   ├── ComparisonTable.jsx
-│       │   ├── ProductRow.jsx
-│       │   └── PriceSummary.jsx
-│       ├── pages/
-│       │   ├── Home.jsx
-│       │   ├── Manual.jsx
-│       │   ├── History.jsx
-│       │   └── Analytics.jsx
-│       └── services/api.js
-├── nginx/nginx.conf
-└── postgres/init.sql
+Navegador → Cloudflare Access / Tunnel → nginx externo
+                                             │
+                                             ▼
+                                  host de StalvIA:3000
+                                  nginx + React compilado
+                                             │ /api/
+                                             ▼
+                                       backend:8000
+                                  ├── PostgreSQL 16
+                                  ├── Redis (caché opcional)
+                                  ├── OpenAI
+                                  └── conectores de tiendas
 ```
 
-## Correcciones necesarias antes del despliegue
+Compose contiene cuatro servicios persistentes (`postgres`, `redis`, `backend`, `frontend`) y una tarea `migrate` que termina después de aplicar Alembic. El nginx que sirve los archivos de React está dentro de `frontend`; el proxy de entrada y Cloudflare Tunnel son externos.
 
-### 1. Instalación reproducible de la base de datos
+- Backend: Python 3.12, FastAPI, SQLAlchemy y Alembic.
+- Frontend: React 18, React Router, Vite y Tailwind 3. Las versiones exactas se registran en `package-lock.json`.
+- OCR: cliente asíncrono de OpenAI; clave y modelo configurables.
+- Conectores: máximo configurable de consultas simultáneas, con un navegador compartido y contextos aislados.
+- Redis: caché de candidatos durante cuatro horas. Sus fallos no impiden consultar tiendas ni guardar tickets.
+- PostgreSQL: compras, catálogo y precios observados. R2 todavía no está integrado.
 
-Actualmente, `postgres/init.sql` intenta crear índices sobre `products` y `product_aliases` antes de que existan las tablas. Esto provoca un error durante la inicialización de una base nueva.
+## Instalación nueva
 
-Además, `backend/migrations/versions/` no contiene una migración inicial. Ejecutar `alembic upgrade head` en este estado no crea el esquema de la aplicación.
-
-Trabajo pendiente:
-
-- Crear y versionar una migración inicial revisada.
-- Crear la extensión `pg_trgm` antes de los índices que dependen de ella.
-- Crear las tablas antes de sus índices.
-- Eliminar del script de inicialización los índices prematuros.
-- Leer la conexión de Alembic desde `DATABASE_URL`, evitando duplicar credenciales.
-- Comprobar la instalación con una base vacía y la actualización de una base existente.
-
-Las migraciones deben generarse y revisarse durante el desarrollo. **No generar una migración nueva en cada despliegue.** La generación automática tampoco sustituye la definición explícita de extensiones e índices especiales.
-
-Si ya hubo un intento de inicialización fallido, revisar los registros y el estado de la base: los scripts de inicialización no se vuelven a ejecutar automáticamente sobre un volumen ya inicializado. No borrar un volumen con datos para solucionar este problema.
-
-### 2. Proveedor de IA y validación del ticket
-
-El código utiliza OpenAI, aunque la variable se llama `ANTHROPIC_API_KEY` y algunos comentarios mencionan Claude o Kimi.
-
-Trabajo pendiente:
-
-- Renombrar la variable a `OPENAI_API_KEY` en código y ejemplos.
-- Hacer configurable el modelo y validar la configuración al arrancar.
-- Usar un cliente asíncrono y manejar errores y tiempos de espera.
-- Validar la estructura extraída, fechas, cantidades y precios antes de consultar tiendas o escribir en la base.
-- Conservar totales de línea y descuentos; comprobar su concordancia con el total del ticket.
-- Permitir revisar y corregir el ticket antes de guardarlo.
-- Detectar subidas duplicadas para evitar compras repetidas.
-- Limitar tamaño y formatos de imagen en el backend.
-
-### 3. Comparaciones fiables
-
-El cálculo actual suma solo los productos encontrados en cada supermercado y elige el total más bajo. Una tienda con un único precio puede aparecer como más barata que otra con la cesta completa.
-
-Antes de presentar ahorros como fiables:
-
-- Mostrar cobertura por tienda, por ejemplo, «7 de 10 productos».
-- Comparar la misma cesta o el mismo subconjunto de productos en ambos lados.
-- Marcar una cesta incompleta y no presentarla como una compra completa más barata.
-- Tratar un precio ausente como desconocido, sin convertirlo en cero.
-- Separar coincidencias exactas, alternativas equivalentes y resultados dudosos.
-- Comprobar código de barras, marca, variedad, formato, cantidad y unidad.
-- Normalizar €/kg, €/l o €/unidad cuando corresponda.
-- Mostrar el producto encontrado, su enlace, fecha de consulta y ubicación.
-- Distinguir errores del conector de productos no encontrados.
-
-### 4. Catálogo e histórico
-
-La identificación actual reutiliza productos por similitud textual superior a `0.6`. Puede mezclar variedades o tamaños diferentes. El alta manual tampoco prioriza la búsqueda por código de barras.
-
-Trabajo pendiente:
-
-- Priorizar códigos de barras e identificadores de la tienda.
-- Usar similitud textual para proponer coincidencias y revisar las ambiguas.
-- Evitar duplicados y conflictos en altas concurrentes.
-- Registrar origen del precio —ticket, manual o conector— y momento real de observación.
-- Conservar tamaño, unidad y ubicación de la oferta comparada.
-- Revisar la deduplicación diaria para no perder cambios de precio.
-- Configurar el borrado de las líneas al eliminar una compra.
-- Usar aritmética decimal para importes.
-
-La media de todos los precios de una tienda describe la muestra registrada; **no demuestra qué supermercado es más barato** si las muestras contienen productos distintos. La clasificación debe basarse en una cesta común.
-
-### 5. Recursos, interfaz y operación
-
-- Limitar la concurrencia y reutilizar navegadores. Un ticket de 20 productos puede lanzar hasta 80 instancias de Chromium con el diseño actual.
-- Procesar análisis largos como trabajos con estado y progreso.
-- Evitar que una caída de Redis impida registrar el ticket.
-- Completar Tailwind y PostCSS: faltan sus configuraciones.
-- Conectar la cámara al elemento de vídeo después de montarlo en `Manual.jsx`.
-- Mostrar errores y opciones de reintento en historial y estadísticas.
-- Separar desarrollo y producción: actualmente se usa Vite en modo desarrollo y Uvicorn con `--reload`.
-- Añadir comprobaciones de disponibilidad de base de datos y caché; `/api/health` solo devuelve una respuesta fija.
-- Restringir el acceso directo a los puertos de origen y configurar Cloudflare Access.
-- Añadir copias de seguridad y comprobar su restauración.
-- Fijar dependencias reproducibles, añadir el archivo de bloqueo del frontend y revisar actualizaciones.
-
-No se ha validado un dimensionamiento mínimo. La propuesta inicial de 2 GB de RAM no debe considerarse suficiente hasta limitar la concurrencia y medir el consumo.
-
-## Preparación del entorno
-
-**Esta sección prepara el despliegue; la instalación completa requiere primero las correcciones anteriores.**
-
-### Requisitos
-
-- Host Linux o LXC con Docker Engine y el complemento Docker Compose instalados.
-- Git.
-- PostgreSQL y Redis se ejecutan mediante Compose.
-- Clave de OpenAI para el código actual.
-- Para acceso remoto: nginx externo, dominio y Cloudflare Tunnel con una política de Access.
-
-En Proxmox, elegir una plantilla disponible y adaptar almacenamiento, identificador, red y recursos al entorno. La dirección `10.8.1.105` usada abajo es solo un ejemplo. No es necesario instalar dependencias Python en el host.
-
-### Clonar y preparar variables
+Requisitos: host Linux o LXC preparado para Docker Engine y Docker Compose, Git y espacio suficiente para PostgreSQL y Chromium. No es necesario instalar Python o Node en el host. Dimensionar recursos con tickets reales; no se garantiza un mínimo de RAM.
 
 ```bash
 git clone https://github.com/nunezruj88/stalvia.git
@@ -221,137 +63,125 @@ cd stalvia
 cp .env.example .env
 ```
 
-Editar `.env` sin subir credenciales al repositorio:
+Editar `.env`:
 
 ```dotenv
-# Compatibilidad temporal: el código actual espera una clave de OpenAI
-# bajo este nombre heredado. Una clave de Anthropic no sirve aquí.
-ANTHROPIC_API_KEY=REEMPLAZAR_POR_CLAVE_DE_OPENAI
-
+OPENAI_API_KEY=REEMPLAZAR_POR_CLAVE_DE_OPENAI
+OPENAI_MODEL=gpt-4o-mini
 POSTGRES_DB=stalvia
 POSTGRES_USER=stalvia
-POSTGRES_PASSWORD=REEMPLAZAR_POR_PASSWORD
-DATABASE_URL=postgresql://stalvia:REEMPLAZAR_POR_PASSWORD@postgres:5432/stalvia
+POSTGRES_PASSWORD=REEMPLAZAR_POR_PASSWORD_SEGURA
 REDIS_URL=redis://redis:6379
+SCRAPER_CONCURRENCY=2
+MERCADONA_WAREHOUSE=vlc1
+BIND_ADDRESS=127.0.0.1
 ```
 
-Mantener la contraseña coherente con `DATABASE_URL`. Los caracteres reservados de la contraseña deben codificarse al incluirla en una URL. Cambiar únicamente el nombre a `OPENAI_API_KEY` no funcionará hasta modificar también el backend.
+`OPENAI_API_KEY` sustituye a la antigua variable `ANTHROPIC_API_KEY`. No usar una clave de Anthropic. La aplicación puede arrancar sin clave para el registro manual; la lectura de fotos devolverá un mensaje de configuración pendiente.
 
-Mientras Alembic mantenga su configuración actual:
+La conexión de la aplicación y de Alembic se construye a partir de `POSTGRES_*`, incluyendo contraseñas con caracteres reservados. `DATABASE_URL` es opcional y tiene prioridad si se define. Si se proporciona una URL manualmente, codificar los caracteres reservados de sus credenciales.
 
 ```bash
-cp backend/alembic.ini.example backend/alembic.ini
+docker compose up -d --build
+docker compose ps -a
+docker compose logs --tail=100 migrate backend frontend
 ```
 
-Editar `sqlalchemy.url` con la misma conexión. Ese archivo está excluido de Git; esta duplicación es temporal hasta que Alembic lea la variable de entorno.
+La tarea `migrate` debe terminar con código 0. El backend arranca después de la migración y la interfaz después de que el backend esté disponible. Una tarea `migrate` terminada correctamente no es un contenedor fallido.
 
-### Arranque después de corregir y versionar las migraciones
+Abrir `http://localhost:3000` en el host o mediante un túnel SSH. `/api/health` comprueba el acceso a la tabla de compras y muestra si hay una clave de OCR configurada.
 
-El siguiente orden solo es válido una vez corregido `init.sql` y añadida la migración inicial:
+### Migraciones y bases existentes
+
+La revisión `0001` crea la extensión `pg_trgm`, las tablas y después los índices. Está versionada y no importa modelos cambiantes durante su ejecución. El antiguo `postgres/init.sql` ya no se monta en Compose.
+
+No generar migraciones durante el despliegue ni copiar contraseñas a `alembic.ini`: la configuración versionada no contiene secretos.
+
+**Si ya hay tablas creadas manualmente o migraciones locales anteriores**, guardar una copia y reconciliar ese esquema con la revisión inicial antes de ejecutar el nuevo Compose. Esta revisión inicial está destinada a una base vacía. No borrar el volumen ni ejecutar `alembic stamp` a ciegas para ocultar un conflicto. No hay una conversión automática de instalaciones antiguas desconocidas.
+
+Para futuras actualizaciones con migraciones compatibles ya revisadas:
 
 ```bash
-docker compose up -d postgres redis
-docker compose run --rm backend alembic upgrade head
-docker compose up -d --build backend frontend
-docker compose ps
-docker compose logs --tail=100 postgres backend frontend
+git pull --ff-only
+docker compose build
+docker compose run --rm migrate
+docker compose up -d
 ```
 
-Comprobar los cuatro servicios y verificar el esquema antes de cargar tickets. Las migraciones se ejecutan dentro del contenedor porque `postgres` es el nombre del servicio en la red de Compose.
+## Proxy y acceso remoto
 
-### nginx externo
+Los puertos se vinculan por defecto a `127.0.0.1`. Si el proxy está en otro host o LXC, cambiar `BIND_ADDRESS` a la dirección LAN del host de StalvIA y permitir acceso únicamente desde el proxy mediante las reglas de red correspondientes.
 
-Usar la dirección del host de StalvIA en el nginx externo. Por ejemplo:
+Adaptar `nginx/nginx.conf` al dominio y dirección del host reales. El ejemplo envía todo a `http://10.8.1.105:3000`; el nginx interno dirige `/api/` al backend y sirve correctamente rutas como `/history`.
 
-```nginx
-server {
-    listen 80;
-    server_name stalvia.example.com;
-    client_max_body_size 10M;
-
-    location / {
-        proxy_pass http://10.8.1.105:3000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
-
-    location /api/ {
-        proxy_pass http://10.8.1.105:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_read_timeout 60s;
-    }
-}
-```
-
-Validar y recargar la configuración del nginx externo:
+Validar y recargar el nginx externo:
 
 ```bash
 nginx -t
 nginx -s reload
 ```
 
-El archivo actual `nginx/nginx.conf` utiliza `frontend` y `backend` como nombres de host. Solo es aplicable si nginx comparte una red Docker donde esos nombres se resuelvan; para nginx externo debe adaptarse como en el ejemplo.
+En Cloudflare Tunnel, dirigir el hostname público a **la dirección y puerto del nginx externo**, por ejemplo `http://<DIRECCION_NGINX>:80`. El proyecto no publica ningún servicio en el puerto 8080.
 
-El timeout de 60 segundos no garantiza que termine el análisis actual. La solución prevista es el procesamiento con progreso, en lugar de depender de una petición HTTP larga. El límite del proxy tampoco sustituye la validación de archivos en el backend.
+Crear también una aplicación y una política de Cloudflare Access para el usuario autorizado. El túnel no establece esa política por sí solo. Restringir el acceso directo al origen para evitar que se eluda Access. El backend no incluye cuentas de usuario propias.
 
-### Cloudflare Tunnel y Access
+Los proxies admiten cuerpos de hasta 9 MB para incluir el envoltorio multipart; el backend limita el archivo a 8 MB. Las comparaciones tienen un tiempo máximo por producto y pueden reintentarse sin perder el ticket.
 
-Configurar el hostname público para dirigirlo a **la dirección y puerto alcanzables del nginx externo**, por ejemplo:
+## Datos y límites de las estadísticas
 
-```text
-Hostname público: stalvia.example.com
-Servicio de origen: http://<DIRECCION_NGINX>:80
+- Se conserva el total impreso de cada línea; no se sustituye por cantidad × precio.
+- La misma imagen tiene un identificador único que evita volver a guardar ese archivo. Otra fotografía del mismo ticket puede requerir revisión manual.
+- Los códigos de barras distinguen productos. Se eliminó la fusión automática por similitud textual. Los nombres sin código siguen sin acreditar equivalencia entre productos.
+- Borrar una compra elimina sus líneas; las observaciones históricas se conservan.
+- El histórico registra precios manuales y de tickets con su origen. Las líneas con descuentos o cantidades fraccionarias no entran automáticamente en el histórico de precios unitarios comparables.
+- La estadística entre tiendas utiliza los últimos precios de una cesta común de productos con código de barras. Si no hay una cesta común entre al menos dos tiendas, no presenta una clasificación.
+- No se almacenan las imágenes del ticket. Se envían al proveedor configurado para su lectura.
+
+## Desarrollo y pruebas
+
+Las dependencias directas de Python están fijadas en `backend/requirements.txt`; la interfaz usa `npm ci` y su archivo de bloqueo. Usar Python 3.12 y Node 22.12 o superior.
+
+```bash
+cd backend
+python -m venv .venv
+# Activar el entorno virtual según el sistema operativo
+python -m pip install -r requirements-dev.txt
+ruff check .
+pytest -q
 ```
 
-No apuntar a `10.8.1.105:8080` salvo que se haya configurado expresamente un servicio en ese puerto: el Compose actual no lo publica.
+La prueba de integración con PostgreSQL requiere `TEST_POSTGRES_URL` apuntando a una base desechable ya migrada. Las demás pruebas aíslan la base y simulan OCR y conectores: no consumen llamadas de IA ni demuestran que una tienda esté disponible en vivo.
 
-Crear una aplicación y una política de Cloudflare Access que autoricen al usuario previsto. Publicar un túnel no configura por sí solo esa autorización. Restringir también las rutas directas a los puertos `3000` y `8000` para impedir que el origen permita eludir Access.
+```bash
+cd frontend
+npm ci
+npm test
+npm run build
+npx playwright install chromium
+npm run test:e2e
+```
 
-## Modelo de datos
+GitHub Actions comprueba estilo, pruebas del backend, instalación y reinstalación del esquema en PostgreSQL 16, cálculos de la interfaz, flujo de revisión en navegador y construcción de contenedores. Consultar resultados actuales en [GitHub Actions](https://github.com/nunezruj88/stalvia/actions).
 
-| Entidades | Uso actual o previsto |
-|---|---|
-| `purchases`, `purchase_items` | Tickets y líneas de compra |
-| `products`, `product_aliases` | Catálogo y variantes de nombres |
-| `price_history` | Observaciones de precios |
-| `stores` | Tiendas; actualmente se reutiliza la primera de cada cadena |
-| `categories`, `brands` | Clasificación y marcas |
-| `promotions` | Modelo definido; gestión de promociones pendiente |
-| `price_alerts` | Modelo definido; notificaciones pendientes |
-| `shopping_lists`, `shopping_list_items` | Modelos definidos; funcionalidad pendiente |
+## Copias de seguridad
 
-La existencia de los modelos no significa que las tablas se creen automáticamente ni que todas las funciones estén disponibles.
+Guardar un volcado antes de actualizar. Por ejemplo, desde la raíz del proyecto:
 
-## Validación y criterios para una primera versión
+```bash
+mkdir -p backups
+docker compose exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > backups/stalvia.sql
+```
 
-El flujo de CI actual ejecuta Ruff para el backend y compila el frontend. No ejecuta pruebas funcionales ni valida conectores en vivo. Consultar el estado actualizado en [GitHub Actions](https://github.com/nunezruj88/stalvia/actions).
+Copiar los respaldos fuera del host y probar su restauración sobre una base independiente. La frecuencia y el destino de las copias dependen de la instalación; no hay una programación automática incluida.
 
-Antes de considerar utilizable la primera versión:
+## Pendiente
 
-- [ ] Instalar desde una base vacía y aplicar migraciones sin errores.
-- [ ] Completar la revisión del backend y la compilación del frontend.
-- [ ] Verificar visualmente estilos y navegación.
-- [ ] Probar extracción válida, salida inválida, imagen excesiva y fallo del proveedor.
-- [ ] Revisar y corregir el ticket antes del guardado.
-- [ ] Probar productos con pesos, formatos y descuentos diferentes.
-- [ ] Verificar que precios ausentes y cestas parciales no generen falsos ahorros.
-- [ ] Probar alta, consulta y borrado de compras con líneas.
-- [ ] Probar código de barras y evitar fusiones incorrectas de productos.
-- [ ] Validar un conector en vivo y distinguir sus errores de ausencia de productos.
-- [ ] Medir consumo y tiempo con tickets representativos.
-- [ ] Verificar Access, restricción del origen y restauración de copias.
-
-## Hoja de ruta
-
-1. **Base reproducible:** migraciones, configuración de IA, estilos e instrucciones de instalación.
-2. **Registro fiable:** revisión del ticket, validaciones, duplicados e historial.
-3. **Comparación fiable:** equivalencia, unidades, cobertura y un primer conector validado.
-4. **Ampliación gradual:** resto de supermercados, ubicación, caché y procesamiento con progreso.
-5. **Analítica:** evolución por producto y comparaciones sobre cestas comunes.
-6. **Funciones futuras:** alertas, listas de compra y almacenamiento opcional de imágenes en R2.
+- Validar y mantener cada conector contra las tiendas reales y la ubicación elegida.
+- Normalizar envases, pesos y volúmenes; tratar promociones complejas y devoluciones.
+- Guardar equivalencias confirmadas con identificadores de tienda y metadatos de formato.
+- Distinguir tiendas físicas de una misma cadena y canales de venta.
+- Reanudar búsquedas después de cerrar la página mediante trabajos persistentes.
+- Añadir alertas, listas de compra y almacenamiento opcional en R2.
 
 ## Uso y distribución
 

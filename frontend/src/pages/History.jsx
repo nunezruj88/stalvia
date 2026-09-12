@@ -97,6 +97,7 @@ function PurchaseDetail({ purchase, onClose }) {
 
 export default function History() {
   const [purchases, setPurchases] = useState([])
+  const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
   const [detail, setDetail] = useState(null)
@@ -104,7 +105,7 @@ export default function History() {
   useEffect(() => {
     getPurchases()
       .then(data => setPurchases(data.purchases || data))
-      .catch(console.error)
+      .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [])
 
@@ -117,6 +118,8 @@ export default function History() {
       console.error(e)
     }
   }
+
+  if (error) return <div role="alert" className="bg-red-50 p-5 rounded-xl">{error}<button className="ml-4 underline" onClick={() => window.location.reload()}>Retry</button></div>
 
   if (loading) return (
     <div className="flex justify-center py-16">

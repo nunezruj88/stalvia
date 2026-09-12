@@ -46,7 +46,6 @@ export default function Manual() {
         video: { facingMode: 'environment' }
       })
       streamRef.current = stream
-      if (videoRef.current) videoRef.current.srcObject = stream
       setScanning(true)
     } catch (e) {
       setStatus({ type: 'error', message: 'Camera not available. Enter barcode manually.' })
@@ -70,6 +69,7 @@ export default function Manual() {
       return
     }
 
+    videoRef.current.srcObject = streamRef.current
     const detector = new window.BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e'] })
     let active = true
 
@@ -103,7 +103,7 @@ export default function Manual() {
       setStatus({ type: 'error', message: 'Please select a supermarket.' })
       return
     }
-    if (!form.price || isNaN(parseFloat(form.price))) {
+    if (!form.price || (!Number.isFinite(Number(form.price)) || Number(form.price) <= 0)) {
       setStatus({ type: 'error', message: 'Please enter a valid price.' })
       return
     }
@@ -245,7 +245,7 @@ export default function Manual() {
             <input
               type="number"
               step="0.01"
-              min="0"
+              min="0.01"
               value={form.price}
               onChange={set('price')}
               placeholder="0.00"

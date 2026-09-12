@@ -1,36 +1,69 @@
 name: CI
-
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
-
+permissions:
+  contents: read
 jobs:
-  backend-lint:
+  backend:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: stalvia_test
+          POSTGRES_USER: stalvia
+          POSTGRES_PASSWORD: test-only-password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U stalvia -d stalvia_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://stalvia:test-only-password@localhost:5432/stalvia_test
+      TEST_POSTGRES_URL: postgresql://stalvia:test-only-password@localhost:5432/stalvia_test
+    defaults:
+      run:
+        working-directory: backend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install deps
-        run: pip install ruff
-        working-directory: backend
-      - name: Lint
-        run: ruff check .
-        working-directory: backend
-
-  frontend-build:
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - name: Verify fresh schema and repeatable upgrades
+        run: |
+          alembic upgrade head
+          alembic upgrade head
+          pytest -q
+      - name: Verify rollback and reinstallation on disposable database
+        run: |
+          alembic downgrade base
+          alembic upgrade head
+          pytest -q tests/test_postgres.py
+  frontend:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-      - name: Install deps
-        run: npm install
-        working-directory: frontend
-      - name: Build
-        run: npm run build
-        working-directory: frontend
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+  containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cp .env.example .env
+      - run: docker compose config --quiet
+      - run: docker compose build

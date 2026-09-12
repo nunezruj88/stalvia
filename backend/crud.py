@@ -1,18 +1,21 @@
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+
+from sqlalchemy import desc, func, text
 from sqlalchemy.orm import Session
-from sqlalchemy import func, desc, text
-from datetime import datetime, timedelta
-from typing import Optional
+
 import models
 
-
 # ─── Purchases ────────────────────────────────────────────────────────────────
+
 
 def save_purchase(
     db: Session,
     supermarket: str,
-    purchase_date: Optional[str],
-    total_amount: Optional[float],
+    purchase_date: str | None,
+    total_amount: float | None,
     products: list[dict],
+    receipt_hash: str | None = None,
 ) -> models.Purchase:
     """
     Save a complete purchase with all its items and price history.
@@ -29,7 +32,7 @@ def save_purchase(
         db.flush()
 
     # Parse date
-    parsed_date = datetime.utcnow()
+    parsed_date = datetime.now(timezone.utc).replace(tzinfo=None)
     if purchase_date:
         try:
             parsed_date = datetime.strptime(purchase_date, "%Y-%m-%d")
@@ -40,85 +43,79 @@ def save_purchase(
         store_id=store.id if store else None,
         purchase_date=parsed_date,
         total_amount=total_amount,
+        receipt_hash=receipt_hash,
     )
     db.add(purchase)
     db.flush()
 
     for p in products:
         # Find or create the canonical product
-        product = _find_or_create_product(db, p.get("canonical_name") or p.get("raw_name"))
+        product = _find_or_create_product(
+            db, p.get("canonical_name") or p.get("raw_name"), p.get("barcode") or None
+        )
 
         # Save raw name as OCR alias if new
         if p.get("raw_name") and p["raw_name"] != product.canonical_name:
             _ensure_alias(db, product.id, p["raw_name"], supermarket, source="ocr")
 
         # Save purchase item
-        unit_price = float(p.get("price_paid") or 0)
-        quantity = float(p.get("quantity") or 1)
+        unit_price = Decimal(str(p.get("price_paid") or 0))
+        quantity = Decimal(str(p.get("quantity") or 1))
         item = models.PurchaseItem(
             purchase_id=purchase.id,
             product_id=product.id,
             raw_name=p.get("raw_name", ""),
             quantity=quantity,
             unit_price=unit_price,
-            total_price=round(unit_price * quantity, 2),
+            total_price=Decimal(str(p["total_price"])),
         )
         db.add(item)
 
-        # Save scraped prices to price_history
-        for super_name, price_data in (p.get("prices") or {}).items():
-            if price_data and price_data.get("price") is not None:
-                # Avoid duplicate entries for today
-                today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-                existing = db.query(models.PriceHistory).filter(
-                    models.PriceHistory.product_id == product.id,
-                    models.PriceHistory.supermarket == super_name,
-                    models.PriceHistory.scraped_at >= today_start,
-                ).first()
-                if not existing:
-                    db.add(models.PriceHistory(
-                        product_id=product.id,
-                        store_id=store.id if store and store.supermarket == super_name else None,
-                        supermarket=super_name,
-                        price=price_data["price"],
-                        in_promotion=price_data.get("in_promotion", False),
-                    ))
+        # Store the observed receipt price, not an unverified search candidate.
+        # Weighted/discounted lines need unit metadata before entering comparison history.
+        if (
+            unit_price > 0
+            and quantity == quantity.to_integral_value()
+            and abs(unit_price * quantity - Decimal(str(p["total_price"])))
+            <= Decimal("0.02")
+        ):
+            db.add(
+                models.PriceHistory(
+                    product_id=product.id,
+                    store_id=store.id if store else None,
+                    supermarket=supermarket,
+                    price=unit_price,
+                    source="receipt",
+                    scraped_at=parsed_date,
+                )
+            )
 
     db.commit()
     db.refresh(purchase)
     return purchase
 
 
-def _find_or_create_product(db: Session, canonical_name: str) -> models.Product:
-    """Find a product by canonical name (exact or fuzzy via pg_trgm), or create it."""
-    if not canonical_name:
-        canonical_name = "Unknown product"
-
-    # Exact match first
-    product = db.query(models.Product).filter(
-        func.lower(models.Product.canonical_name) == canonical_name.lower()
-    ).first()
-    if product:
-        return product
-
-    # Fuzzy match via pg_trgm (similarity > 0.6)
-    product = db.query(models.Product).filter(
-        text("similarity(canonical_name, :name) > 0.6").bindparams(name=canonical_name)
-    ).order_by(
-        text("similarity(canonical_name, :name) DESC").bindparams(name=canonical_name)
-    ).first()
-    if product:
-        return product
-
-    # Also check aliases
-    alias = db.query(models.ProductAlias).filter(
-        func.lower(models.ProductAlias.alias) == canonical_name.lower()
-    ).first()
-    if alias:
-        return alias.product
-
-    # Create new product
-    product = models.Product(canonical_name=canonical_name)
+def _find_or_create_product(
+    db: Session, canonical_name: str, barcode: str | None = None
+) -> models.Product:
+    name = " ".join(canonical_name.split())
+    if barcode:
+        product = db.query(models.Product).filter_by(barcode=barcode).first()
+        if product:
+            return product
+        # A new barcode represents a distinct SKU even if the name matches.
+    else:
+        product = (
+            db.query(models.Product)
+            .filter(
+                func.lower(models.Product.canonical_name) == name.lower(),
+                models.Product.barcode.is_(None),
+            )
+            .first()
+        )
+        if product:
+            return product
+    product = models.Product(canonical_name=name, barcode=barcode)
     db.add(product)
     db.flush()
     return product
@@ -128,20 +125,24 @@ def _ensure_alias(
     db: Session,
     product_id: int,
     alias: str,
-    supermarket: Optional[str],
+    supermarket: str | None,
     source: str = "ocr",
 ):
     """Add an alias if it doesn't already exist."""
-    existing = db.query(models.ProductAlias).filter_by(
-        product_id=product_id, alias=alias
-    ).first()
+    existing = (
+        db.query(models.ProductAlias)
+        .filter_by(product_id=product_id, alias=alias)
+        .first()
+    )
     if not existing:
-        db.add(models.ProductAlias(
-            product_id=product_id,
-            alias=alias,
-            supermarket=supermarket,
-            source=source,
-        ))
+        db.add(
+            models.ProductAlias(
+                product_id=product_id,
+                alias=alias,
+                supermarket=supermarket,
+                source=source,
+            )
+        )
 
 
 def get_purchases(db: Session, skip: int = 0, limit: int = 50) -> list:
@@ -155,18 +156,22 @@ def get_purchases(db: Session, skip: int = 0, limit: int = 50) -> list:
     )
     result = []
     for p in purchases:
-        result.append({
-            "id": p.id,
-            "supermarket": p.store.supermarket if p.store else None,
-            "purchase_date": p.purchase_date,
-            "total_amount": float(p.total_amount) if p.total_amount else None,
-            "item_count": len(p.items),
-            "created_at": p.created_at,
-        })
+        result.append(
+            {
+                "id": p.id,
+                "supermarket": p.store.supermarket if p.store else None,
+                "purchase_date": p.purchase_date,
+                "total_amount": float(p.total_amount)
+                if p.total_amount is not None
+                else None,
+                "item_count": len(p.items),
+                "created_at": p.created_at,
+            }
+        )
     return result
 
 
-def get_purchase(db: Session, purchase_id: int) -> Optional[dict]:
+def get_purchase(db: Session, purchase_id: int) -> dict | None:
     """Return a single purchase with all items."""
     p = db.query(models.Purchase).filter_by(id=purchase_id).first()
     if not p:
@@ -175,7 +180,7 @@ def get_purchase(db: Session, purchase_id: int) -> Optional[dict]:
         "id": p.id,
         "supermarket": p.store.supermarket if p.store else None,
         "purchase_date": p.purchase_date,
-        "total_amount": float(p.total_amount) if p.total_amount else None,
+        "total_amount": float(p.total_amount) if p.total_amount is not None else None,
         "item_count": len(p.items),
         "created_at": p.created_at,
         "items": [
@@ -203,18 +208,22 @@ def delete_purchase(db: Session, purchase_id: int) -> bool:
 
 # ─── Products ─────────────────────────────────────────────────────────────────
 
-def get_products(db: Session, search: str = "", skip: int = 0, limit: int = 100) -> list:
+
+def get_products(
+    db: Session, search: str = "", skip: int = 0, limit: int = 100
+) -> list:
     q = db.query(models.Product)
     if search:
         q = q.filter(models.Product.canonical_name.ilike(f"%{search}%"))
     return q.order_by(models.Product.canonical_name).offset(skip).limit(limit).all()
 
 
-def get_product(db: Session, product_id: int) -> Optional[models.Product]:
+def get_product(db: Session, product_id: int) -> models.Product | None:
     return db.query(models.Product).filter_by(id=product_id).first()
 
 
 # ─── Price history ────────────────────────────────────────────────────────────
+
 
 def get_price_history(
     db: Session,
@@ -222,7 +231,7 @@ def get_price_history(
     supermarket: str = "",
     days: int = 180,
 ) -> list:
-    since = datetime.utcnow() - timedelta(days=days)
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
     q = db.query(models.PriceHistory).filter(
         models.PriceHistory.product_id == product_id,
         models.PriceHistory.scraped_at >= since,
@@ -234,28 +243,41 @@ def get_price_history(
 
 # ─── Analytics ────────────────────────────────────────────────────────────────
 
+
 def get_cheapest_supermarket(db: Session, days: int = 30) -> list:
-    """Average price per supermarket over the last N days."""
-    since = datetime.utcnow() - timedelta(days=days)
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
     rows = (
-        db.query(
-            models.PriceHistory.supermarket,
-            func.avg(models.PriceHistory.price).label("avg_price"),
-            func.count(models.PriceHistory.id).label("data_points"),
+        db.query(models.PriceHistory)
+        .join(models.Product)
+        .filter(
+            models.PriceHistory.scraped_at >= since,
+            models.Product.barcode.isnot(None),
         )
-        .filter(models.PriceHistory.scraped_at >= since)
-        .group_by(models.PriceHistory.supermarket)
-        .order_by(func.avg(models.PriceHistory.price))
+        .order_by(models.PriceHistory.scraped_at.desc(), models.PriceHistory.id.desc())
         .all()
     )
-    return [
+    latest = {}
+    for row in rows:
+        latest.setdefault((row.supermarket, row.product_id), row.price)
+    stores = sorted({s for s, _ in latest})
+    if len(stores) < 2:
+        return []
+    common = set.intersection(
+        *({p for s, p in latest if s == store} for store in stores)
+    )
+    if not common:
+        return []
+    result = [
         {
-            "supermarket": r.supermarket,
-            "avg_price": round(float(r.avg_price), 4),
-            "data_points": r.data_points,
+            "supermarket": s,
+            "avg_price": round(
+                float(sum(latest[s, p] for p in common) / len(common)), 4
+            ),
+            "data_points": len(common),
         }
-        for r in rows
+        for s in stores
     ]
+    return sorted(result, key=lambda row: row["avg_price"])
 
 
 def get_monthly_spending(db: Session) -> list:
@@ -286,8 +308,8 @@ def save_manual_product(
     name: str,
     supermarket: str,
     price: float,
-    barcode: Optional[str] = None,
-    category: Optional[str] = None,
+    barcode: str | None = None,
+    category: str | None = None,
 ) -> dict:
     """
     Manually register a product and save its price to price_history.
@@ -303,7 +325,7 @@ def save_manual_product(
             db.flush()
 
     # Find or create product
-    product = _find_or_create_product(db, name)
+    product = _find_or_create_product(db, name, barcode)
 
     # Update barcode if provided and not already set
     if barcode and not product.barcode:
@@ -324,13 +346,16 @@ def save_manual_product(
         db.flush()
 
     # Save to price_history (always insert — append-only)
-    db.add(models.PriceHistory(
-        product_id=product.id,
-        store_id=store.id,
-        supermarket=supermarket,
-        price=price,
-        in_promotion=False,
-    ))
+    db.add(
+        models.PriceHistory(
+            product_id=product.id,
+            store_id=store.id,
+            supermarket=supermarket,
+            price=price,
+            in_promotion=False,
+            source="manual",
+        )
+    )
 
     # Save alias with source='manual'
     _ensure_alias(db, product.id, name, supermarket, source="manual")

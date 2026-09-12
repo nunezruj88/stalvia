@@ -46,4 +46,11 @@ uploads/
 *.pdf
 
 # Alembic config (contains DB credentials)
-backend/alembic.ini
+# Alembic configuration contains no credentials
+
+# Test outputs and backups
+test-results/
+playwright-report/
+backups/
+.pytest_cache/
+.ruff_cache/
