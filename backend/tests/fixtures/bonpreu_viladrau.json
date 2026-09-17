@@ -1,0 +1,19 @@
+{
+  "@context": "https://schema.org",
+  "@type": "Product",
+  "sku": "16101",
+  "name": "VILADRAU Aigua mineral natural dèbil garrafa 5L",
+  "description": "Aigua mineral natural dèbil Viladrau en garrafa de 5 litres<br>",
+  "image": [
+    "https://www.compraonline.bonpreuesclat.cat/images-v3/dcbcfd72-cf23-44a2-8e14-8a38edd645a3/749408a4-995a-420e-9c93-c5d828096998/500x500.jpg"
+  ],
+  "brand": "VILADRAU",
+  "size": "5L",
+  "offers": {
+    "@type": "Offer",
+    "price": "1.89",
+    "priceCurrency": "EUR",
+    "itemCondition": "https://schema.org/NewCondition",
+    "availability": "https://schema.org/InStock"
+  }
+}

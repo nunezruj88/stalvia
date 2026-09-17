@@ -21,13 +21,15 @@ La confirmación de coincidencias es una estimación de esta sesión; no se guar
 |---|---|---|
 | Mercadona | Playwright y respuesta de búsqueda de la tienda | Código postal configurable; probado con 08759 el 17/09/2026 |
 | Carrefour | Playwright | Selectores y acceso sujetos a cambios |
-| Bonpreu / Esclat | Playwright | Selectores y acceso sujetos a cambios |
+| Bonpreu / Esclat | Ficha por URL y datos estructurados JSON-LD | Extracción probada con HTML guardado; acceso en vivo bloqueado y búsqueda por nombre pendiente |
 | El Corte Inglés | Playwright | Selectores y acceso sujetos a cambios |
 | Alcampo | Playwright | Selectores y acceso sujetos a cambios |
 
 Los conectores devuelven candidatos, no coincidencias automáticas. Un error se diferencia de un precio no disponible. Nunca se interpreta un precio ausente como cero. No se garantiza cobertura de ninguna tienda hasta validar el conector y la ubicación en el entorno de destino.
 
 Mercadona usa el formulario de código postal y la respuesta de búsqueda Algolia que carga su web, sin incorporar claves de búsqueda al código. `MERCADONA_POSTAL_CODE=08759` sustituye a `MERCADONA_WAREHOUSE`; el centro se resuelve en la tienda. Se conserva el precio del envase o pack completo y se incluye su formato en el nombre. La caché distingue códigos postales. La ruta antigua `/api/search/` ya no se utiliza. Cambiar el código postal requiere recrear el backend. Las demás tiendas siguen pendientes de validación.
+
+Bonpreu dispone de un lector de fichas por URL (`scrapers.bonpreu.read_product`). Su extracción se ha comprobado con un HTML facilitado por el usuario: Viladrau 5 L, SKU 16101, 1,89 € en esa copia. Ese importe no acredita el precio actual ni disponibilidad para un código postal. Se selecciona el producto por SKU, se valida EUR y se distingue el precio de venta del precio por litro y de las recomendaciones. La búsqueda automática por nombre sigue sin estar validada y devuelve error explícito. El lector por URL todavía no tiene un formulario específico en la interfaz. No se publica el HTML completo del usuario: las pruebas incluyen únicamente los datos públicos del producto.
 
 ## Mantenimiento
 

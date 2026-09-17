@@ -1,51 +1,28 @@
-"""
-Scraper Bonpreu / Esclat via Playwright (headless Chromium).
-"""
+"""Bonpreu storefront search and structured product details."""
 
-import re
-from urllib.parse import quote_plus
-
+from .bonpreu_product import HOST, parse_product, product_id
 from .browser import page_context
+
+BASE_URL = f"https://{HOST}"
+
+
+async def read_page(page, url):
+    response = await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+    if response is None or response.status >= 400:
+        raise RuntimeError("Bonpreu blocked or unavailable")
+
+
+async def read_product(url):
+    product_id(url)
+    async with page_context() as page:
+        await read_page(page, url)
+        return parse_product(await page.content(), page.url)
 
 
 async def search(query: str) -> dict | None:
-    """Cerca un producte a Bonpreu/Esclat i retorna el primer resultat."""
-    url = f"https://www.bonpreuesclat.cat/ca/search?text={quote_plus(query)}"
-
-    try:
-        async with page_context() as page:
-            await page.goto(url, wait_until="domcontentloaded", timeout=15000)
-            await page.wait_for_selector(".product-item", timeout=8000)
-
-            # Primer producte
-            card = await page.query_selector(".product-item")
-            if not card:
-                return None
-
-            name_el = await card.query_selector(".product-item__name")
-            price_el = await card.query_selector(".product-item__price")
-            img_el = await card.query_selector("img")
-            link_el = await card.query_selector("a")
-
-            name = await name_el.inner_text() if name_el else query
-            price_text = await price_el.inner_text() if price_el else ""
-            image = await img_el.get_attribute("src") if img_el else None
-            href = await link_el.get_attribute("href") if link_el else ""
-
-            # Netejar el preu
-            price_clean = re.sub(r"[^\d,.]", "", price_text).replace(",", ".")
-            price = float(price_clean) if price_clean else None
-
-            return {
-                "name": name.strip(),
-                "price": price,
-                "image": image,
-                "url": f"https://www.bonpreuesclat.cat{href}"
-                if href.startswith("/")
-                else href,
-                "in_promotion": False,
-            }
-
-    except Exception as e:
-        print(f"[Bonpreu] Error cercant '{query}': {e}")
-        raise
+    # A direct product URL can also be used to validate an individual listing.
+    if query.startswith("https://"):
+        return await read_product(query)
+    raise RuntimeError(
+        "Bonpreu name search is not validated; a product URL is required"
+    )
