@@ -1,55 +1,96 @@
-"""
-Scraper Mercadona via API no oficial de la comunitat.
-Documentació: https://tienda.mercadona.es/api/
-"""
+"""Read the public shop's current search response without embedding API keys."""
 
+import math
 import os
+import re
+from urllib.parse import parse_qs, urlsplit
 
-import httpx
+from .browser import page_context
 
-BASE_URL = "https://tienda.mercadona.es/api"
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
-    "Accept": "application/json",
-}
+
+def postal_code():
+    value = os.getenv("MERCADONA_POSTAL_CODE", "08759").strip()
+    if not re.fullmatch(r"[0-9]{5}", value):
+        raise ValueError("MERCADONA_POSTAL_CODE must contain five digits")
+    return value
+
+
+def parse_result(data, postcode):
+    if not isinstance(data, dict) or not isinstance(data.get("hits"), list):
+        raise ValueError("Unexpected Mercadona search response")
+    if not data["hits"]:
+        return None
+    item = data["hits"][0]
+    prices = item["price_instructions"]
+    price = float(prices["unit_price"])
+    if not math.isfinite(price) or price <= 0 or not item.get("display_name"):
+        raise ValueError("Invalid Mercadona product")
+    size = prices.get("unit_size")
+    unit = prices.get("size_format", "")
+    count = prices.get("total_units")
+    pack_size = prices.get("pack_size")
+    if prices.get("is_pack") and count and pack_size:
+        presentation = f"{count} x {pack_size:g} {unit}"
+    elif size:
+        presentation = f"{item.get('packaging') or 'Unidad'} {size:g} {unit}"
+    else:
+        presentation = item.get("packaging") or ""
+    return {
+        "name": " · ".join(filter(None, [item["display_name"], presentation])),
+        "price": price,
+        "unit_size": size,
+        "unit_name": unit,
+        "image": item.get("thumbnail"),
+        "url": f"https://tienda.mercadona.es/product/{int(item['id'])}",
+        "in_promotion": bool(prices.get("price_decreased")),
+        "postal_code": postcode,
+        "comparable": False,
+    }
 
 
 async def search(query: str) -> dict | None:
-    """Cerca un producte a Mercadona i retorna el primer resultat."""
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(
-                f"{BASE_URL}/search/",
-                params={
-                    "query": query,
-                    "lang": "es",
-                    "wh": os.getenv("MERCADONA_WAREHOUSE", "vlc1"),
-                },
-                headers=HEADERS,
+    postcode = postal_code()
+    query = query.strip()
+    if not query:
+        raise ValueError("Empty search")
+    async with page_context() as page:
+        response = await page.goto(
+            "https://tienda.mercadona.es/", wait_until="domcontentloaded", timeout=15000
+        )
+        if response is None or response.status >= 400:
+            raise RuntimeError("Mercadona shop unavailable")
+        await page.locator('input[name="postalCode"]').fill(postcode, timeout=8000)
+
+        def is_zone(response):
+            url = urlsplit(response.url)
+            return (
+                url.hostname == "tienda.mercadona.es"
+                and url.path == "/api/home/"
+                and parse_qs(url.query).get("postal_code") == [postcode]
             )
-            r.raise_for_status()
-            data = r.json()
 
-        results = data.get("results", {}).get("items", [])
-        if not results:
-            return None
+        async with page.expect_response(is_zone, timeout=8000) as zone:
+            await page.get_by_role("button", name="Continuar", exact=True).click()
+        if (await zone.value).status != 200:
+            raise RuntimeError("Mercadona postal code unavailable")
+        reject = page.get_by_role("button", name="Rechazar", exact=True)
+        if await reject.is_visible():
+            await reject.click()
 
-        item = results[0]
-        price_info = item.get("price_instructions", {})
+        def is_search(response):
+            url = urlsplit(response.url)
+            if not (url.hostname or "").endswith(".algolia.net"):
+                return False
+            if not url.path.endswith("/query"):
+                return False
+            payload = response.request.post_data_json
+            return isinstance(payload, dict) and payload.get("query") == query
 
-        return {
-            "name": item.get("display_name"),
-            "price": float(price_info["unit_price"])
-            if price_info.get("unit_price")
-            else None,
-            "unit_size": price_info.get("unit_size"),
-            "unit_name": price_info.get("unit_name"),
-            "price_per_unit": float(price_info.get("reference_price", 0)),
-            "image": item.get("thumbnail"),
-            "url": f"https://tienda.mercadona.es/product/{item['id']}",
-            "in_promotion": False,
-        }
-
-    except Exception as e:
-        print(f"[Mercadona] Error cercant '{query}': {e}")
-        raise
+        async with page.expect_response(is_search, timeout=8000) as result:
+            box = page.locator('input[name="search"]')
+            await box.fill(query)
+            await box.press("Enter")
+        response = await result.value
+        if response.status != 200:
+            raise RuntimeError("Mercadona search unavailable")
+        return parse_result(await response.json(), postcode)

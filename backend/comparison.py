@@ -74,7 +74,7 @@ def calculate_summary(products):
 
 async def lookup(store, name):
     key = (
-        f"offer:v2:{store}:{os.getenv('MERCADONA_WAREHOUSE', 'vlc1')}:{name.casefold()}"
+        f"offer:v3:{store}:{os.getenv('MERCADONA_POSTAL_CODE', '08759')}:{name.casefold()}"
     )
     try:
         cached = await redis_client.get(key)

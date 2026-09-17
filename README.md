@@ -19,13 +19,15 @@ La confirmación de coincidencias es una estimación de esta sesión; no se guar
 
 | Tienda | Conector | Limitación |
 |---|---|---|
-| Mercadona | HTTP a API no oficial | Almacén configurable; endpoint y catálogo sujetos a cambios |
+| Mercadona | Playwright y respuesta de búsqueda de la tienda | Código postal configurable; probado con 08759 el 17/09/2026 |
 | Carrefour | Playwright | Selectores y acceso sujetos a cambios |
 | Bonpreu / Esclat | Playwright | Selectores y acceso sujetos a cambios |
 | El Corte Inglés | Playwright | Selectores y acceso sujetos a cambios |
 | Alcampo | Playwright | Selectores y acceso sujetos a cambios |
 
 Los conectores devuelven candidatos, no coincidencias automáticas. Un error se diferencia de un precio no disponible. Nunca se interpreta un precio ausente como cero. No se garantiza cobertura de ninguna tienda hasta validar el conector y la ubicación en el entorno de destino.
+
+Mercadona usa el formulario de código postal y la respuesta de búsqueda Algolia que carga su web, sin incorporar claves de búsqueda al código. `MERCADONA_POSTAL_CODE=08759` sustituye a `MERCADONA_WAREHOUSE`; el centro se resuelve en la tienda. Se conserva el precio del envase o pack completo y se incluye su formato en el nombre. La caché distingue códigos postales. La ruta antigua `/api/search/` ya no se utiliza. Cambiar el código postal requiere recrear el backend. Las demás tiendas siguen pendientes de validación.
 
 ## Mantenimiento
 
@@ -80,7 +82,7 @@ POSTGRES_USER=stalvia
 POSTGRES_PASSWORD=REEMPLAZAR_POR_PASSWORD_SEGURA
 REDIS_URL=redis://redis:6379
 SCRAPER_CONCURRENCY=2
-MERCADONA_WAREHOUSE=vlc1
+MERCADONA_POSTAL_CODE=08759
 BIND_ADDRESS=127.0.0.1
 ```
 
